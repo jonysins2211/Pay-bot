@@ -1,1 +1,1 @@
-# Pay-bot
+# Payment-bot

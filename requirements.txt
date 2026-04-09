@@ -1,0 +1,9 @@
+pyrofork==2.3.69.dev1
+tgcrypto
+aiohttp
+motor
+pymongo
+qrcode[pil]
+Pillow
+dnspython
+pytz

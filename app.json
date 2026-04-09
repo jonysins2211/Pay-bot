@@ -1,0 +1,27 @@
+{
+  "name": "ML Payment Bot",
+  "description": "Telegram Premium Subscription Payment Bot",
+  "keywords": ["telegram", "bot", "payment"],
+  "env": {
+    "API_ID": { "description": "Telegram API ID from my.telegram.org" },
+    "API_HASH": { "description": "Telegram API Hash from my.telegram.org" },
+    "BOT_TOKEN": { "description": "Bot token from @BotFather" },
+    "OWNER_ID": { "description": "Your Telegram user ID" },
+    "ADMIN_IDS": { "description": "Admin user IDs separated by space" },
+    "LOGS_CHANNEL": { "description": "Logs channel ID (negative number)" },
+    "ADMIN_GROUP": { "description": "Admin group ID (negative number)" },
+    "OWNER_USERNAME": { "description": "Your Telegram username e.g @yourname" },
+    "SUPPORT_GROUP": { "description": "Support group username e.g @yourgroup" },
+    "UPDATES_CHANNEL": { "description": "Updates channel username e.g @yourchannel" },
+    "UPI_ID": { "description": "Your UPI ID for payments" },
+    "UPI_NAME": { "description": "Your name shown on UPI" },
+    "MONGO_URL": { "description": "MongoDB connection URI (optional)" },
+    "SESSION": { "description": "Session name", "value": "PaymentBot" }
+  },
+  "formation": {
+    "web": { "quantity": 1, "size": "free" }
+  },
+  "buildpacks": [
+    { "url": "heroku/python" }
+  ]
+}

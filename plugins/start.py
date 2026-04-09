@@ -16,10 +16,15 @@ async def start_cmd(client: Client, message: Message):
     user_state.pop(user.id, None)
 
     welcome = (
-        f"✨ **HELLO** 💀 **{user.first_name}!**\n\n"
-        f"🚀 **WELCOME TO Payment Bot!**\n"
-        f"*THANK YOU FOR CHOOSING OUR SERVICE.*\n\n"
-        f"👇 *FOLLOW BELOW BUTTONS TO NAVIGATE:*\n🚀"
+        f"👋 **Hello {user.first_name}!**\n\n"
+            f"🚀 **Welcome to ML Payment Bot!**\n"
+            f"💳 *Fast • Secure • Reliable Payments*\n\n"
+            f"✨ **What you can do:**\n"
+            f"• Access Premium Bots\n"
+            f"• Premium Files to Link bots\n"
+            f"• Get Combo Deals\n"
+            f"• Instant Support\n\n"
+            f"👇 **Use the buttons below to continue**"
     )
 
     if BANNER_IMAGE:

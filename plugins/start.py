@@ -2,9 +2,9 @@ import logging
 from pyrogram import Client, filters
 from pyrogram.types import Message
 
-from info import BOTS, BANNER_IMAGE
+from info import BANNER_IMAGE
 from keyboards import main_menu_kb, home_kb
-from utils import user_state, cancel_expiry, pending_pays, cancel_expiry_by_pid
+from utils import user_state, clear_user_pending
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 @Client.on_message(filters.command("start") & filters.private)
 async def start_cmd(client: Client, message: Message):
     user = message.from_user
-    cancel_expiry(user.id)
+    await clear_user_pending(user.id)
     user_state.pop(user.id, None)
 
     welcome = (
@@ -40,11 +40,7 @@ async def start_cmd(client: Client, message: Message):
 @Client.on_message(filters.command("cancel") & filters.private)
 async def cancel_cmd(client: Client, message: Message):
     user  = message.from_user
-    state = user_state.get(user.id, {})
-    pid   = state.get("pending_id")
-    if pid:
-        pending_pays.pop(pid, None)
-        cancel_expiry_by_pid(pid)
+    await clear_user_pending(user.id)
     user_state.pop(user.id, None)
     await message.reply_text(
         "❌ *Process cancelled.*\nUse /start to begin again.",

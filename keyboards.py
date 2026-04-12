@@ -2,6 +2,15 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from info import BOTS, OWNER_USERNAME, UPDATES_CHANNEL, SUPPORT_GROUP
 
 
+def telegram_url(value: str) -> str:
+    value = (value or "").strip()
+    if not value:
+        return "https://t.me"
+    if value.startswith(("http://", "https://")):
+        return value
+    return f"https://t.me/{value.lstrip('@')}"
+
+
 def main_menu_kb() -> InlineKeyboardMarkup:
     rows = []
     for key, bot in BOTS.items():
@@ -45,8 +54,8 @@ def expired_kb(bot_key: str, plan_key: str) -> InlineKeyboardMarkup:
 def help_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📣 JOIN UPDATES", url=f"https://t.me/{UPDATES_CHANNEL.lstrip('@')}"),
-            InlineKeyboardButton("📋 OWNER",         url=f"https://t.me/{OWNER_USERNAME.lstrip('@')}"),
+            InlineKeyboardButton("📣 JOIN UPDATES", url=telegram_url(UPDATES_CHANNEL)),
+            InlineKeyboardButton("📋 OWNER",         url=telegram_url(OWNER_USERNAME)),
         ],
         [InlineKeyboardButton("🏠 HOME", callback_data="home")],
     ])

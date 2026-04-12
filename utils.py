@@ -64,15 +64,28 @@ def cancel_expiry_by_pid(pid: str):
     if task and not task.done():
         task.cancel()
 
-async def clear_user_pending(user_id: int):
+async def clear_user_pending(user_id: int, client=None):
     state = user_state.get(user_id, {})
     pid = state.get("pending_id")
     if not pid:
         return
 
+    chat_id = state.get("chat_id")
+    qr_message_id = state.get("qr_message_id")
+    proof_message_id = state.get("proof_message_id")
+
     cancel_expiry_by_pid(pid)
     pending_pays.pop(pid, None)
     await del_pending(pid)
+
+    if client and chat_id:
+        for msg_id in (qr_message_id, proof_message_id):
+            if not msg_id:
+                continue
+            try:
+                await client.delete_messages(chat_id, msg_id)
+            except Exception:
+                pass
 
 
 async def qr_expiry_timer(client, user_id: int, pid: str,
@@ -88,9 +101,20 @@ async def qr_expiry_timer(client, user_id: int, pid: str,
     if not state.get("awaiting_screenshot") or state.get("pending_id") != pid:
         return
 
+    qr_message_id = state.get("qr_message_id")
+    proof_message_id = state.get("proof_message_id")
+
     user_state.pop(user_id, None)
     pending_pays.pop(pid, None)
     await del_pending(pid)
+
+    for msg_id in (qr_message_id, proof_message_id):
+        if not msg_id:
+            continue
+        try:
+            await client.delete_messages(chat_id, msg_id)
+        except Exception:
+            pass
 
     bot  = BOTS.get(bot_key, {})
     plan = bot.get("plans", {}).get(plan_key, {})

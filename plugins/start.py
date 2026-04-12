@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 @Client.on_message(filters.command("start") & filters.private)
 async def start_cmd(client: Client, message: Message):
     user = message.from_user
-    await clear_user_pending(user.id)
+    await clear_user_pending(user.id, client)
     user_state.pop(user.id, None)
 
     welcome = (
@@ -40,7 +40,7 @@ async def start_cmd(client: Client, message: Message):
 @Client.on_message(filters.command("cancel") & filters.private)
 async def cancel_cmd(client: Client, message: Message):
     user  = message.from_user
-    await clear_user_pending(user.id)
+    await clear_user_pending(user.id, client)
     user_state.pop(user.id, None)
     await message.reply_text(
         "❌ *Process cancelled.*\nUse /start to begin again.",

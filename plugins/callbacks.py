@@ -7,7 +7,7 @@ from pyrogram.types import CallbackQuery
 from info import BOTS, ADMIN_IDS, LOGS_CHANNEL, SUPPORT_GROUP, OWNER_USERNAME, UPDATES_CHANNEL, QR_EXPIRY_SECONDS
 from keyboards import (
     main_menu_kb, plan_kb, home_kb, expired_kb,
-    help_kb, admin_kb, renew_kb
+    help_kb, admin_kb, renew_kb, telegram_url
 )
 from utils import (
     user_state, pending_pays, expiry_tasks,
@@ -29,7 +29,7 @@ async def callbacks(client: Client, query: CallbackQuery):
 
     # ── HOME ──────────────────────────────────────────────────
     if data == "home":
-        await clear_user_pending(user.id)
+        await clear_user_pending(user.id, client)
         user_state.pop(user.id, None)
 
         welcome = (
@@ -72,7 +72,7 @@ async def callbacks(client: Client, query: CallbackQuery):
             await query.answer("Plan not found!", show_alert=True)
             return
 
-        await clear_user_pending(user.id)
+        await clear_user_pending(user.id, client)
 
         amount = plan["price"]
         label  = plan["label"]
@@ -97,11 +97,12 @@ async def callbacks(client: Client, query: CallbackQuery):
             "bot_key":             bot_key,
             "plan_key":            plan_key,
             "pending_id":          pid,
+            "chat_id":             query.message.chat.id,
             "awaiting_screenshot": True,
         }
 
         qr_buf = make_qr(amount, note)
-        await query.message.reply_photo(
+        qr_msg = await query.message.reply_photo(
             photo=qr_buf,
             caption=(
                 f"🧾 **PAYMENT DETAILS:**\n\n"
@@ -112,10 +113,12 @@ async def callbacks(client: Client, query: CallbackQuery):
                 f"📸 • SEND THE PAYMENT SCREENSHOT HERE"
             ),
         )
-        await query.message.reply_text(
+        proof_msg = await query.message.reply_text(
             "📸 **SEND A SCREENSHOT OF THE PAYMENT FOR VERIFICATION.**\n\n"
             "*USE* /cancel *TO CANCEL THE PROCESS.*"
         )
+        user_state[user.id]["qr_message_id"] = qr_msg.id
+        user_state[user.id]["proof_message_id"] = proof_msg.id
         await query.answer()
 
         uname = f"@{user.username}" if user.username else "No username"
@@ -216,7 +219,7 @@ async def callbacks(client: Client, query: CallbackQuery):
         )
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("ℹ️ NEED HELP / SUPPORT",
-                                  url=f"https://t.me/{SUPPORT_GROUP.lstrip('@')}")],
+                                  url=telegram_url(SUPPORT_GROUP))],
             [InlineKeyboardButton("🏠 HOME", callback_data="home"),
              InlineKeyboardButton("✖️ CLOSE", callback_data="close")],
         ])

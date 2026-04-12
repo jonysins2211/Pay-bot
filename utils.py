@@ -64,6 +64,16 @@ def cancel_expiry_by_pid(pid: str):
     if task and not task.done():
         task.cancel()
 
+async def clear_user_pending(user_id: int):
+    state = user_state.get(user_id, {})
+    pid = state.get("pending_id")
+    if not pid:
+        return
+
+    cancel_expiry_by_pid(pid)
+    pending_pays.pop(pid, None)
+    await del_pending(pid)
+
 
 async def qr_expiry_timer(client, user_id: int, pid: str,
                            bot_key: str, plan_key: str, chat_id: int):

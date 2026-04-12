@@ -12,7 +12,7 @@ from keyboards import (
 from utils import (
     user_state, pending_pays, expiry_tasks,
     make_qr, make_pending_id, fmt_dt, log,
-    cancel_expiry, cancel_expiry_by_pid, qr_expiry_timer
+    cancel_expiry_by_pid, qr_expiry_timer, clear_user_pending
 )
 from database.db import (
     add_pending, get_pending, del_pending,
@@ -29,12 +29,7 @@ async def callbacks(client: Client, query: CallbackQuery):
 
     # ── HOME ──────────────────────────────────────────────────
     if data == "home":
-        cancel_expiry(user.id)
-        state = user_state.get(user.id, {})
-        pid = state.get("pending_id")
-        if pid:
-            pending_pays.pop(pid, None)
-            await del_pending(pid)
+        await clear_user_pending(user.id)
         user_state.pop(user.id, None)
 
         welcome = (
@@ -76,6 +71,8 @@ async def callbacks(client: Client, query: CallbackQuery):
         if not bot or not plan:
             await query.answer("Plan not found!", show_alert=True)
             return
+
+        await clear_user_pending(user.id)
 
         amount = plan["price"]
         label  = plan["label"]
@@ -134,7 +131,6 @@ async def callbacks(client: Client, query: CallbackQuery):
             f"⏳ QR valid for 5 minutes"
         )
 
-        cancel_expiry(user.id)
         task = asyncio.create_task(
             qr_expiry_timer(client, user.id, pid, bot_key, plan_key, query.message.chat.id)
         )

@@ -2,9 +2,9 @@ from os import environ
 
 # ── Bot Credentials ───────────────────────────────────────────
 SESSION   = environ.get("SESSION", "PaymentBot")
-API_ID    = int(environ.get("API_ID", "29961422"))
-API_HASH  = environ.get("API_HASH", "cba915c79809dc0806676db7052b2a83")
-BOT_TOKEN = environ.get("BOT_TOKEN", "8793787645:AAGdIG2WGA_15lzNqn34xlqFoZKWfzl8ZMg")
+API_ID    = int(environ.get("API_ID", ""))
+API_HASH  = environ.get("API_HASH", "")
+BOT_TOKEN = environ.get("BOT_TOKEN", "")
 
 # ── Admin & Channels ──────────────────────────────────────────
 OWNER_ID     = int(environ.get("OWNER_ID", "949657126"))

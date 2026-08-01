@@ -12,7 +12,7 @@ from keyboards import (
 from utils import (
     user_state, pending_pays, expiry_tasks,
     make_qr, make_pending_id, fmt_dt, log,
-    cancel_expiry_by_pid, qr_expiry_timer, clear_user_pending
+    cancel_expiry_by_pid, qr_expiry_timer, clear_user_pending, answer_if_banned
 )
 from database.db import (
     add_pending, get_pending, del_pending,
@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 async def callbacks(client: Client, query: CallbackQuery):
     data = query.data
     user = query.from_user
+
+    if await answer_if_banned(query):
+        return
 
     # ── HOME ──────────────────────────────────────────────────
     if data == "home":

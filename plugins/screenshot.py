@@ -5,15 +5,18 @@ from pyrogram.types import Message
 
 from info import BOTS, ADMIN_GROUP, OWNER_USERNAME
 from keyboards import home_kb, admin_kb
-from utils import user_state, pending_pays, cancel_expiry_by_pid, log
+from utils import user_state, pending_pays, cancel_expiry_by_pid, log, reply_if_banned
 
 logger = logging.getLogger(__name__)
 
-COMMANDS = ["start", "myplan", "myhistory", "report", "owner_cmd", "pending", "cancel", "broadcast"]
+COMMANDS = ["start", "myplan", "myhistory", "report", "owner_cmd", "pending", "cancel", "broadcast", "ban", "unban", "bans"]
 
 
 @Client.on_message(filters.private & (filters.photo | filters.document))
 async def screenshot_handler(client: Client, message: Message):
+    if await reply_if_banned(message):
+        return
+
     user  = message.from_user
     state = user_state.get(user.id, {})
 
@@ -94,6 +97,9 @@ async def screenshot_handler(client: Client, message: Message):
 
 @Client.on_message(filters.private & filters.text & ~filters.command(COMMANDS))
 async def text_handler(client: Client, message: Message):
+    if await reply_if_banned(message):
+        return
+
     user  = message.from_user
     state = user_state.get(user.id, {})
 

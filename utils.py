@@ -10,7 +10,7 @@ from info import *
 from database.db import (
     add_pending, get_pending, del_pending,
     add_sub, get_subs, set_subs, get_all_subs,
-    add_history
+    add_history, get_ban
 )
 
 logger = logging.getLogger(__name__)
@@ -19,6 +19,38 @@ logger = logging.getLogger(__name__)
 user_state:   dict = {}
 expiry_tasks: dict = {}
 pending_pays: dict = {}   # mirrors DB for quick access
+
+
+def ban_message(reason: str) -> str:
+    return (
+        "🚫 **You are banned.**\n\n"
+        f"Reason: {reason}"
+    )
+
+
+async def is_banned(user_id: int) -> dict | None:
+    return await get_ban(user_id)
+
+
+async def reply_if_banned(message) -> bool:
+    ban = await is_banned(message.from_user.id)
+    if not ban:
+        return False
+    await message.reply_text(ban_message(ban.get("reason", "No reason provided.")))
+    return True
+
+
+async def answer_if_banned(query) -> bool:
+    ban = await is_banned(query.from_user.id)
+    if not ban:
+        return False
+    text = ban_message(ban.get("reason", "No reason provided."))
+    await query.answer(text.replace("**", ""), show_alert=True)
+    try:
+        await query.message.reply_text(text)
+    except Exception:
+        pass
+    return True
 
 
 def make_qr(amount: int, note: str) -> BytesIO:

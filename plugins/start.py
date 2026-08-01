@@ -4,13 +4,16 @@ from pyrogram.types import Message
 
 from info import BANNER_IMAGE
 from keyboards import main_menu_kb, home_kb
-from utils import user_state, clear_user_pending
+from utils import user_state, clear_user_pending, reply_if_banned
 
 logger = logging.getLogger(__name__)
 
 
 @Client.on_message(filters.command("start") & filters.private)
 async def start_cmd(client: Client, message: Message):
+    if await reply_if_banned(message):
+        return
+
     user = message.from_user
     await clear_user_pending(user.id, client)
     user_state.pop(user.id, None)
@@ -39,6 +42,9 @@ async def start_cmd(client: Client, message: Message):
 
 @Client.on_message(filters.command("cancel") & filters.private)
 async def cancel_cmd(client: Client, message: Message):
+    if await reply_if_banned(message):
+        return
+
     user  = message.from_user
     await clear_user_pending(user.id, client)
     user_state.pop(user.id, None)

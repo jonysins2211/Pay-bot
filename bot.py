@@ -51,7 +51,7 @@ text-decoration:none;padding:15px 10px;border-radius:12px;margin:6px 0 14px}}
 <p><b>{bot_name}</b> is requesting a payment of</p>
 <div class="amount">₹{amount}</div>
 <p class="plan">📅 Plan: {label}</p>
-<a class="pay" href="{upi}">💳 Pay ₹{amount} via UPI</a>
+<a class="pay" href="{upi}" id="payBtn">💳 Pay ₹{amount} via UPI</a>
 <p class="hint">Tap Pay — your UPI app opens with the amount already filled.
 After paying, send the payment screenshot to the bot.</p>
 </div>
@@ -63,6 +63,16 @@ if (window.Telegram && Telegram.WebApp) {{
   Telegram.WebApp.setHeaderColor('#0f172a');
   Telegram.WebApp.setBackgroundColor('#0f172a');
 }}
+// In the Mini App, a plain upi:// link makes the WebView itself try to
+// load it and fail (net::ERR_UNKNOWN_URL_SCHEME). Open it through
+// Telegram instead, so the UPI app opens. In a normal browser the plain
+// link works, so only intercept inside Telegram.
+document.getElementById('payBtn').addEventListener('click', function (e) {{
+  if (window.Telegram && Telegram.WebApp && Telegram.WebApp.openLink) {{
+    e.preventDefault();
+    Telegram.WebApp.openLink(document.getElementById('payBtn').getAttribute('href'));
+  }}
+}});
 </script>
 </body></html>"""
 

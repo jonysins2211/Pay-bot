@@ -5,6 +5,7 @@ Collections:
   - user_history  : { _id: user_id, history: [ {bot_name, plan, amount, date, status} ] }
   - pending_pays  : { _id: pid, user_id, username, first_name, bot_key, plan_key, amount, ts, chat_id }
   - banned_users  : { _id: user_id, reason: str, banned_at: str, banned_by: int }
+  - promo_codes   : { _id: CODE, type: "percent"|"flat", value: int, max_uses: int|None, uses: int, created_at: str, created_by: int }
 """
 
 import logging
@@ -22,6 +23,7 @@ subs_col    = _db["active_subs"]
 history_col = _db["user_history"]
 pending_col = _db["pending_pays"]
 banned_col  = _db["banned_users"]
+promo_col   = _db["promo_codes"]
 
 logger.info("✅ MongoDB connected")
 
@@ -103,6 +105,50 @@ async def add_history(user_id: int, tx: dict):
         {"$push": {"history": tx}},
         upsert=True
     )
+
+
+# ══════════════════════════════════════════════════════════════
+#  PROMO CODES
+# ══════════════════════════════════════════════════════════════
+
+async def add_promo(code: str, data: dict):
+    await promo_col.update_one(
+        {"_id": code},
+        {"$set": data},
+        upsert=True
+    )
+
+async def get_promo(code: str) -> dict | None:
+    doc = await promo_col.find_one({"_id": code})
+    if doc:
+        doc.pop("_id", None)
+    return doc
+
+async def del_promo(code: str):
+    await promo_col.delete_one({"_id": code})
+
+async def get_all_promos() -> dict:
+    result = {}
+    async for doc in promo_col.find():
+        code = doc.pop("_id")
+        result[code] = doc
+    return result
+
+async def use_promo(code: str) -> bool:
+    """Atomically consume one use of a promo code.
+
+    Returns True only if the code exists and has a use left (unlimited
+    when max_uses is None). The check and the increment happen in one
+    update, so two users racing for the last use cannot both get it.
+    """
+    result = await promo_col.update_one(
+        {"_id": code, "$or": [
+            {"max_uses": None},
+            {"$expr": {"$lt": ["$uses", "$max_uses"]}},
+        ]},
+        {"$inc": {"uses": 1}},
+    )
+    return result.modified_count == 1
 
 
 # ══════════════════════════════════════════════════════════════

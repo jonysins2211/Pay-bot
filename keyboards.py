@@ -1,6 +1,9 @@
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from info import BOTS, OWNER_USERNAME, UPDATES_CHANNEL, SUPPORT_GROUP
 
+# Extra days granted by the "APPROVE +5 DAYS" button (loyal-user bonus).
+BONUS_DAYS = 5
+
 
 def telegram_url(value: str) -> str:
     value = (value or "").strip()
@@ -38,7 +41,7 @@ def plan_kb(bot_key: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def pay_kb(pay_url: str, pid: str = "") -> InlineKeyboardMarkup:
+def pay_kb(pay_url: str, pid: str = "", show_promo: bool = True) -> InlineKeyboardMarkup:
     """Pay Now button: opens the bot's payment page in the browser.
 
     The Mini App (WebApp button) version did not work — the UPI button
@@ -47,12 +50,18 @@ def pay_kb(pay_url: str, pid: str = "") -> InlineKeyboardMarkup:
     user's browser (Chrome), where the upi:// link opens the UPI app.
 
     A second button, Resend Link, gives the user a fresh 5-minute
-    payment link (new pid) without starting over.
+    payment link (new pid) without starting over. A third button,
+    Apply Promo Code, lets the user enter a discount code — once a
+    code is applied the button is hidden (one code per payment).
     """
     rows = [[InlineKeyboardButton("💳 Pay Now", url=pay_url)]]
     if pid:
         rows.append([InlineKeyboardButton(
             "🔄 Resend Link", callback_data=f"resend:{pid}"
+        )])
+    if pid and show_promo:
+        rows.append([InlineKeyboardButton(
+            "🎟️ Apply Promo Code", callback_data=f"promo:{pid}"
         )])
     return InlineKeyboardMarkup(rows)
 
@@ -88,10 +97,21 @@ def help_kb() -> InlineKeyboardMarkup:
 
 
 def admin_kb(pending_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("✅ APPROVE", callback_data=f"approve:{pending_id}"),
-        InlineKeyboardButton("❌ REJECT",  callback_data=f"reject:{pending_id}"),
-    ]])
+    """Approve / Reject buttons for a payment screenshot (admin group).
+
+    A third button approves with BONUS_DAYS extra (loyal-user bonus)
+    in the same single tap — the normal APPROVE button is unchanged.
+    """
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ APPROVE", callback_data=f"approve:{pending_id}"),
+            InlineKeyboardButton("❌ REJECT",  callback_data=f"reject:{pending_id}"),
+        ],
+        [
+            InlineKeyboardButton(f"🎁 APPROVE +{BONUS_DAYS} DAYS",
+                                 callback_data=f"approve_bonus:{pending_id}"),
+        ],
+    ])
 
 
 def renew_plan_kb(bot_key: str, plan_key: str) -> InlineKeyboardMarkup:

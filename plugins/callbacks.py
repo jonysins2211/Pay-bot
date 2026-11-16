@@ -1,21 +1,20 @@
 import asyncio
-import base64
 import logging
-import os
 from datetime import datetime, timedelta
-from io import BytesIO
 from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery
 
 from info import BOTS, ADMIN_IDS, LOGS_CHANNEL, SUPPORT_GROUP, OWNER_USERNAME, UPDATES_CHANNEL, QR_EXPIRY_SECONDS
 from keyboards import (
     main_menu_kb, plan_kb, home_kb, expired_kb,
-    help_kb, admin_kb, pay_kb, telegram_url
+    help_kb, admin_kb, pay_kb, telegram_url, BONUS_DAYS
 )
 from utils import (
     user_state, pending_pays, expiry_tasks,
     payment_link, make_pending_id, fmt_dt, log,
-    cancel_expiry_by_pid, qr_expiry_timer, clear_user_pending, answer_if_banned, esc
+    cancel_expiry_by_pid, cancel_nudge_by_pid, qr_expiry_timer,
+    clear_user_pending, answer_if_banned, esc,
+    payment_caption, start_payment,
 )
 from database.db import (
     add_pending, get_pending, del_pending,
@@ -24,43 +23,120 @@ from database.db import (
 
 logger = logging.getLogger(__name__)
 
-# Payment banner shown instead of the QR code. Stored as base64 text
-# (assets/pay_banner.b64) because the repo push carries text files only.
-# The QR still lives on the payment-link page (/pay/<pid>).
-PAY_BANNER_B64 = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "assets", "pay_banner.b64"
-)
-_BANNER_CACHE = None
 
+async def _approve_payment(client, query, pid: str, bonus_days: int) -> bool:
+    """Approve a pending payment (shared by APPROVE and APPROVE +BONUS).
 
-def payment_caption(amount: int, label: str, link: str) -> str:
-    """Caption for the payment message (used by plan select and resend)."""
-    return (
-        f"<b>🧾 PAYMENT DETAILS:</b>\n\n"
-        f"<blockquote><b>• PAY ₹{amount} — PREMIUM TIME: {esc(label)}\n"
-        f"• PAYMENT LINK VALID FOR 5 MINUTES</b></blockquote>\n\n"
-        f"<b>💳 TAP “PAY NOW” BELOW TO OPEN THE PAYMENT PAGE</b>\n"
-        f"<b>🔗 Payment Link:</b> <a href=\"{link}\">{link}</a>\n\n"
-        f"<b>⚠️ AFTER PAYMENT:</b>\n"
-        f"<b>📸 SEND THE PAYMENT SCREENSHOT HERE</b>"
+    Adds the subscription (plan days + bonus_days), records the history
+    entry (with receipt_id), sends the user the activation + receipt
+    messages, and clears the pending payment. Returns False if the
+    payment was already processed or the user is not an admin.
+    """
+    user = query.from_user
+    if user.id not in ADMIN_IDS:
+        await query.answer("⛔ Not authorized!", show_alert=True)
+        return False
+
+    # Check memory first, then DB
+    payment = pending_pays.get(pid) or await get_pending(pid)
+    if not payment:
+        await query.answer("⚠️ Already processed.", show_alert=True)
+        return False
+
+    bot_key   = payment["bot_key"]
+    plan_key  = payment["plan_key"]
+    bot       = BOTS[bot_key]
+    plan      = bot["plans"][plan_key]
+    uid       = payment["user_id"]
+    amount    = payment.get("amount", plan["price"])
+    expiry_dt  = datetime.now() + timedelta(days=plan["days"] + bonus_days)
+    expiry_str = fmt_dt(expiry_dt)
+    bonus_line = f"\n🎁 Bonus: +{bonus_days} days" if bonus_days else ""
+
+    cancel_expiry_by_pid(pid)
+    cancel_nudge_by_pid(pid)
+
+    # Save subscription to MongoDB
+    sub = {
+        "bot_key":    bot_key,
+        "plan_key":   plan_key,
+        "expiry":     expiry_str,
+        "expiry_raw": expiry_dt.strftime("%Y-%m-%d"),
+        "reminders_sent": [],
+    }
+    await add_sub(uid, sub)
+
+    # Save history to MongoDB
+    await add_history(uid, {
+        "bot_name": bot["name"],
+        "plan":     plan["label"],
+        "amount":   amount,
+        "date":     datetime.now().strftime("%d %b %Y"),
+        "status":   "✅ Approved",
+        "receipt_id": pid,
+    })
+
+    try:
+        await client.send_message(
+            uid,
+            f"<b>🎉 PREMIUM ACTIVATED!</b>\n\n"
+            f"<blockquote><b>✅ Payment approved by admin.\n"
+            f"🤖 Bot: {esc(bot['username'])}\n"
+            f"📅 Plan: {esc(plan['label'])}{bonus_line}\n"
+            f"📆 Valid Until: {esc(expiry_str)}</b></blockquote>\n\n"
+            f"<b>Enjoy all premium features! 🚀</b>\n"
+            f"<b>Join: {esc(SUPPORT_GROUP)}</b>",
+        )
+    except Exception as e:
+        logger.error(f"Notify user {uid}: {e}")
+
+    # Payment receipt — a keepable record of the purchase.
+    try:
+        await client.send_message(
+            uid,
+            f"<b>🧾 PAYMENT RECEIPT</b>\n\n"
+            f"<blockquote><b>🧾 Receipt ID: <code>{esc(pid)}</code>\n"
+            f"🤖 Bot: {esc(bot['username'])}\n"
+            f"📅 Plan: {esc(plan['label'])}{bonus_line}\n"
+            f"💰 Amount Paid: ₹{amount}\n"
+            f"📆 Paid On: {datetime.now().strftime('%d %b %Y')}\n"
+            f"📆 Valid Until: {esc(expiry_str)}\n"
+            f"✅ Status: Approved</b></blockquote>\n\n"
+            f"<b>Keep this receipt for your records.</b>",
+        )
+    except Exception as e:
+        logger.error(f"Receipt to user {uid}: {e}")
+
+    await query.answer("✅ Approved!" + (f" (+{bonus_days} days bonus)" if bonus_days else ""))
+    try:
+        orig = query.message.caption or query.message.text or ""
+        approved_tag = f"<b>✅ APPROVED</b> by @{esc(user.username or user.first_name)}"
+        if bonus_days:
+            approved_tag += f" <b>(+{bonus_days} DAYS BONUS)</b>"
+        new_text = orig + f"\n\n{approved_tag}"
+        if query.message.caption:
+            await query.message.edit_caption(new_text)
+        else:
+            await query.message.edit_text(new_text)
+    except Exception:
+        pass
+
+    uname = f"@{payment['username']}" if payment['username'] != "N/A" else "No username"
+    await log(client,
+        f"<b>✅ PAYMENT APPROVED</b>\n\n"
+        f"<b>👤 User:</b> <a href=\"tg://user?id={uid}\">{esc(payment['first_name'])}</a>\n"
+        f"<b>🔗 Username:</b> {esc(uname)}\n"
+        f"<b>🆔 User ID:</b> <code>{uid}</code>\n"
+        f"<b>🤖 Bot:</b> {esc(bot['name'])} (<code>{esc(bot['username'])}</code>)\n"
+        f"<b>📅 Plan:</b> {esc(plan['label'])}{bonus_line}\n"
+        f"<b>💰 Amount:</b> ₹{amount}\n"
+        f"<b>📆 Valid Until:</b> {esc(expiry_str)}\n"
+        f"<b>👮 Approved by:</b> @{esc(user.username or user.first_name)}\n"
+        f"<code>{datetime.now().strftime('%d %b %Y %H:%M:%S')}</code>"
     )
-
-
-def pay_banner_photo():
-    """Banner image as a photo the bot can send (None if the asset is missing)."""
-    global _BANNER_CACHE
-    if _BANNER_CACHE is None:
-        try:
-            with open(PAY_BANNER_B64) as f:
-                _BANNER_CACHE = base64.b64decode(f.read())
-        except Exception:
-            _BANNER_CACHE = False
-    if not _BANNER_CACHE:
-        return None
-    buf = BytesIO(_BANNER_CACHE)
-    buf.name = "pay_banner.jpg"
-    return buf
+    pending_pays.pop(pid, None)
+    await del_pending(pid)
+    return True
 
 
 @Client.on_callback_query()
@@ -116,77 +192,14 @@ async def callbacks(client: Client, query: CallbackQuery):
             await query.answer("Plan not found!", show_alert=True)
             return
 
-        await clear_user_pending(user.id, client)
-
-        amount = plan["price"]
-        label  = plan["label"]
-        note   = f"Premium {bot['username']} {label}"
-        pid    = make_pending_id(user.id, bot_key, plan_key)
-
-        pay_data = {
-            "user_id":    user.id,
-            "username":   user.username or "N/A",
-            "first_name": user.first_name,
-            "bot_key":    bot_key,
-            "plan_key":   plan_key,
-            "amount":     amount,
-            "ts":         datetime.now().isoformat(),
-            "chat_id":    query.message.chat.id,
-        }
-        # Save to memory + MongoDB
-        pending_pays[pid] = pay_data
-        await add_pending(pid, pay_data)
-
-        user_state[user.id] = {
-            "bot_key":             bot_key,
-            "plan_key":            plan_key,
-            "pending_id":          pid,
-            "chat_id":             query.message.chat.id,
-            "awaiting_screenshot": True,
-        }
-
-        # No QR in the bot's payment message any more — the banner image
-        # goes here instead. The QR lives on the payment-link page
-        # (/pay/<pid>), above the price, for anyone who wants to scan it.
-        # The Pay Now button opens the payment page in the browser
-        # (Chrome) — the Mini App version did not work because the UPI
-        # button inside the Mini App WebView would not open the UPI app.
-        # The Resend Link button gives a fresh 5-minute link in place.
-        link = payment_link(pid)
-        caption = payment_caption(amount, label, link)
-        banner = pay_banner_photo()
-        if banner is not None:
-            pay_msg = await query.message.reply_photo(
-                photo=banner, caption=caption, reply_markup=pay_kb(link, pid),
-            )
-        else:
-            # Banner missing (e.g. fresh checkout without the asset) — text only.
-            pay_msg = await query.message.reply_text(caption, reply_markup=pay_kb(link, pid))
-        proof_msg = await query.message.reply_text(
-            "<b>📸 SEND A SCREENSHOT OF THE PAYMENT FOR VERIFICATION.</b>\n\n"
-            "<b>Use /cancel to cancel the process.</b>"
+        # Shared payment flow (also used by /createlink): creates the
+        # pending payment, sends the payment message + screenshot
+        # prompt, and starts the 5-minute expiry timer.
+        await start_payment(
+            client, user.id, bot_key, plan_key,
+            username=user.username or "N/A", first_name=user.first_name,
         )
-        user_state[user.id]["qr_message_id"] = pay_msg.id
-        user_state[user.id]["proof_message_id"] = proof_msg.id
         await query.answer()
-
-        uname = f"@{user.username}" if user.username else "No username"
-        await log(client,
-            f"<b>🔔 QR CODE GENERATED</b>\n\n"
-            f"<b>👤 User:</b> <a href=\"tg://user?id={user.id}\">{esc(user.first_name)}</a>\n"
-            f"<b>🔗 Username:</b> {esc(uname)}\n"
-            f"<b>🆔 User ID:</b> <code>{user.id}</code>\n"
-            f"<b>🤖 Bot:</b> {esc(bot['name'])} (<code>{esc(bot['username'])}</code>)\n"
-            f"<b>📅 Plan:</b> {esc(label)}\n"
-            f"<b>💰 Amount:</b> ₹{amount}\n"
-            f"<code>{datetime.now().strftime('%d %b %Y %H:%M:%S')}</code>\n"
-            f"<b>⏳ QR valid for 5 minutes</b>"
-        )
-
-        task = asyncio.create_task(
-            qr_expiry_timer(client, user.id, pid, bot_key, plan_key, query.message.chat.id)
-        )
-        expiry_tasks[pid] = task
 
     # ── RESEND PAYMENT LINK ───────────────────────────────────
     # Fresh 5-minute link for the same payment, in place — the user
@@ -248,6 +261,29 @@ async def callbacks(client: Client, query: CallbackQuery):
             f"<b>📅 Plan:</b> {esc(label)} | ₹{amount}\n"
             f"<code>{datetime.now().strftime('%d %b %Y %H:%M:%S')}</code>"
         )
+
+    # ── APPLY PROMO CODE ──────────────────────────────────────
+    # Asks the user to send their promo code as a text message.
+    # The code is validated and applied by the text handler (which
+    # sees user_state["awaiting_promo"]). Only while still awaiting
+    # the screenshot; once sent, the payment is under review.
+    elif data.startswith("promo:"):
+        pid = data.split(":", 1)[1]
+        payment = pending_pays.get(pid) or await get_pending(pid)
+        if not payment:
+            await query.answer("⚠️ This payment link has expired. Please /start again.", show_alert=True)
+            return
+        state = user_state.get(user.id, {})
+        if not state.get("awaiting_screenshot") or state.get("pending_id") != pid:
+            await query.answer("⚠️ This payment is already under review.", show_alert=True)
+            return
+        user_state[user.id]["awaiting_promo"] = pid
+        await query.message.reply_text(
+            "<b>🎟️ APPLY PROMO CODE</b>\n\n"
+            "<blockquote><b>Send your promo code now.</b></blockquote>\n\n"
+            "<b>Or /cancel to skip the promo and pay the full price.</b>",
+        )
+        await query.answer()
 
     # ── PREMIUM PROOF ─────────────────────────────────────────
     elif data == "proof":
@@ -336,104 +372,17 @@ async def callbacks(client: Client, query: CallbackQuery):
 
     # ── ADMIN APPROVE ─────────────────────────────────────────
     elif data.startswith("approve:"):
-        if user.id not in ADMIN_IDS:
-            await query.answer("⛔ Not authorized!", show_alert=True)
-            return
-
         pid = data.split(":", 1)[1]
-        # Check memory first, then DB
-        payment = pending_pays.get(pid) or await get_pending(pid)
-        if not payment:
-            await query.answer("⚠️ Already processed.", show_alert=True)
-            return
+        await _approve_payment(client, query, pid, bonus_days=0)
 
-        bot_key   = payment["bot_key"]
-        plan_key  = payment["plan_key"]
-        bot       = BOTS[bot_key]
-        plan      = bot["plans"][plan_key]
-        uid       = payment["user_id"]
-        expiry_dt  = datetime.now() + timedelta(days=plan["days"])
-        expiry_str = fmt_dt(expiry_dt)
-
-        cancel_expiry_by_pid(pid)
-
-        # Save subscription to MongoDB
-        sub = {
-            "bot_key":    bot_key,
-            "plan_key":   plan_key,
-            "expiry":     expiry_str,
-            "expiry_raw": expiry_dt.strftime("%Y-%m-%d"),
-            "reminders_sent": [],
-        }
-        await add_sub(uid, sub)
-
-        # Save history to MongoDB
-        await add_history(uid, {
-            "bot_name": bot["name"],
-            "plan":     plan["label"],
-            "amount":   plan["price"],
-            "date":     datetime.now().strftime("%d %b %Y"),
-            "status":   "✅ Approved",
-            "receipt_id": pid,
-        })
-
-        try:
-            await client.send_message(
-                uid,
-                f"<b>🎉 PREMIUM ACTIVATED!</b>\n\n"
-                f"<blockquote><b>✅ Payment approved by admin.\n"
-                f"🤖 Bot: {esc(bot['username'])}\n"
-                f"📅 Plan: {esc(plan['label'])}\n"
-                f"📆 Valid Until: {esc(expiry_str)}</b></blockquote>\n\n"
-                f"<b>Enjoy all premium features! 🚀</b>\n"
-                f"<b>Join: {esc(SUPPORT_GROUP)}</b>",
-            )
-        except Exception as e:
-            logger.error(f"Notify user {uid}: {e}")
-
-        # Payment receipt — a keepable record of the purchase.
-        try:
-            await client.send_message(
-                uid,
-                f"<b>🧾 PAYMENT RECEIPT</b>\n\n"
-                f"<blockquote><b>🧾 Receipt ID: <code>{esc(pid)}</code>\n"
-                f"🤖 Bot: {esc(bot['username'])}\n"
-                f"📅 Plan: {esc(plan['label'])}\n"
-                f"💰 Amount Paid: ₹{plan['price']}\n"
-                f"📆 Paid On: {datetime.now().strftime('%d %b %Y')}\n"
-                f"📆 Valid Until: {esc(expiry_str)}\n"
-                f"✅ Status: Approved</b></blockquote>\n\n"
-                f"<b>Keep this receipt for your records.</b>",
-            )
-        except Exception as e:
-            logger.error(f"Receipt to user {uid}: {e}")
-
-        await query.answer("✅ Approved!")
-        try:
-            orig = query.message.caption or query.message.text or ""
-            new_text = orig + f"\n\n<b>✅ APPROVED</b> by @{esc(user.username or user.first_name)}"
-            if query.message.caption:
-                await query.message.edit_caption(new_text)
-            else:
-                await query.message.edit_text(new_text)
-        except Exception:
-            pass
-
-        uname = f"@{payment['username']}" if payment['username'] != "N/A" else "No username"
-        await log(client,
-            f"<b>✅ PAYMENT APPROVED</b>\n\n"
-            f"<b>👤 User:</b> <a href=\"tg://user?id={uid}\">{esc(payment['first_name'])}</a>\n"
-            f"<b>🔗 Username:</b> {esc(uname)}\n"
-            f"<b>🆔 User ID:</b> <code>{uid}</code>\n"
-            f"<b>🤖 Bot:</b> {esc(bot['name'])} (<code>{esc(bot['username'])}</code>)\n"
-            f"<b>📅 Plan:</b> {esc(plan['label'])}\n"
-            f"<b>💰 Amount:</b> ₹{plan['price']}\n"
-            f"<b>📆 Valid Until:</b> {esc(expiry_str)}\n"
-            f"<b>👮 Approved by:</b> @{esc(user.username or user.first_name)}\n"
-            f"<code>{datetime.now().strftime('%d %b %Y %H:%M:%S')}</code>"
-        )
-        pending_pays.pop(pid, None)
-        await del_pending(pid)
+    # ── ADMIN APPROVE + BONUS DAYS ────────────────────────────
+    # Same as APPROVE, but the subscription gets BONUS_DAYS extra
+    # (loyal-user bonus). Note: "approve_bonus:..." does NOT start
+    # with "approve:" (it is "approve_..."), so the branch above
+    # never catches it.
+    elif data.startswith("approve_bonus:"):
+        pid = data.split(":", 1)[1]
+        await _approve_payment(client, query, pid, bonus_days=BONUS_DAYS)
 
     # ── ADMIN REJECT ──────────────────────────────────────────
     elif data.startswith("reject:"):
@@ -452,13 +401,15 @@ async def callbacks(client: Client, query: CallbackQuery):
         bot      = BOTS[bot_key]
         plan     = bot["plans"][plan_key]
         uid      = payment["user_id"]
+        amount   = payment.get("amount", plan["price"])
 
         cancel_expiry_by_pid(pid)
+        cancel_nudge_by_pid(pid)
 
         await add_history(uid, {
             "bot_name": bot["name"],
             "plan":     plan["label"],
-            "amount":   plan["price"],
+            "amount":   amount,
             "date":     datetime.now().strftime("%d %b %Y"),
             "status":   "❌ Rejected",
         })
@@ -493,7 +444,7 @@ async def callbacks(client: Client, query: CallbackQuery):
             f"<b>🆔 User ID:</b> <code>{uid}</code>\n"
             f"<b>🤖 Bot:</b> {esc(bot['name'])} (<code>{esc(bot['username'])}</code>)\n"
             f"<b>📅 Plan:</b> {esc(plan['label'])}\n"
-            f"<b>💰 Amount:</b> ₹{plan['price']}\n"
+            f"<b>💰 Amount:</b> ₹{amount}\n"
             f"<b>👮 Rejected by:</b> @{esc(user.username or user.first_name)}\n"
             f"<code>{datetime.now().strftime('%d %b %Y %H:%M:%S')}</code>"
         )

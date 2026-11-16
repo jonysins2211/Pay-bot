@@ -1,3 +1,4 @@
+import base64
 import html
 import os
 import asyncio
@@ -11,7 +12,7 @@ from info import *
 from database.db import (
     add_pending, get_pending, del_pending,
     add_sub, get_subs, set_subs, get_all_subs,
-    add_history, get_ban
+    add_history, get_ban, get_promo, use_promo,
 )
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,12 @@ logger = logging.getLogger(__name__)
 # ── In-memory (runtime only) ──────────────────────────────────
 user_state:   dict = {}
 expiry_tasks: dict = {}
+nudge_tasks:  dict = {}
 pending_pays: dict = {}   # mirrors DB for quick access
+
+# A payment screenshot waiting this long for admin approval triggers
+# one reminder to the admin group (with Approve/Reject buttons).
+APPROVAL_NUDGE_SECONDS = 1800  # 30 minutes
 
 
 def esc(value) -> str:
@@ -113,6 +119,58 @@ def make_qr(amount: int, note: str) -> BytesIO:
     return buf
 
 
+def payment_caption(amount: int, label: str, link: str,
+                    promo_code: str | None = None,
+                    original_amount: int | None = None) -> str:
+    """Caption for the payment message (used by plan select and resend).
+
+    When a promo code was applied, the caption shows the discounted
+    amount, the original price, and the code used.
+    """
+    if promo_code and original_amount is not None and original_amount > amount:
+        amount_line = (
+            f"• PAY ₹{amount} <s>₹{original_amount}</s> — PREMIUM TIME: {esc(label)}\n"
+            f"• 🎟️ PROMO {esc(promo_code)} APPLIED — YOU SAVE ₹{original_amount - amount}"
+        )
+    else:
+        amount_line = f"• PAY ₹{amount} — PREMIUM TIME: {esc(label)}"
+    return (
+        f"<b>🧾 PAYMENT DETAILS:</b>\n\n"
+        f"<blockquote><b>{amount_line}\n"
+        f"• PAYMENT LINK VALID FOR 5 MINUTES</b></blockquote>\n\n"
+        f"<b>💳 TAP “PAY NOW” BELOW TO OPEN THE PAYMENT PAGE</b>\n"
+        f"<b>🔗 Payment Link:</b> <a href=\"{link}\">{link}</a>\n\n"
+        f"<b>⚠️ AFTER PAYMENT:</b>\n"
+        f"<b>📸 SEND THE PAYMENT SCREENSHOT HERE</b>"
+    )
+
+
+# Payment banner shown instead of the QR code. Stored as base64 text
+# (assets/pay_banner.b64) because the repo push carries text files only.
+# The QR still lives on the payment-link page (/pay/<pid>).
+PAY_BANNER_B64 = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "assets", "pay_banner.b64"
+)
+_BANNER_CACHE = None
+
+
+def pay_banner_photo():
+    """Banner image as a photo the bot can send (None if the asset is missing)."""
+    global _BANNER_CACHE
+    if _BANNER_CACHE is None:
+        try:
+            with open(PAY_BANNER_B64) as f:
+                _BANNER_CACHE = base64.b64decode(f.read())
+        except Exception:
+            _BANNER_CACHE = False
+    if not _BANNER_CACHE:
+        return None
+    buf = BytesIO(_BANNER_CACHE)
+    buf.name = "pay_banner.jpg"
+    return buf
+
+
 def make_pending_id(user_id: int, bot_key: str, plan_key: str) -> str:
     return f"{user_id}_{bot_key}_{plan_key}_{int(datetime.now().timestamp())}"
 
@@ -141,6 +199,11 @@ def cancel_expiry_by_pid(pid: str):
     if task and not task.done():
         task.cancel()
 
+def cancel_nudge_by_pid(pid: str):
+    task = nudge_tasks.pop(pid, None)
+    if task and not task.done():
+        task.cancel()
+
 async def clear_user_pending(user_id: int, client=None):
     state = user_state.get(user_id, {})
     pid = state.get("pending_id")
@@ -163,6 +226,43 @@ async def clear_user_pending(user_id: int, client=None):
                 await client.delete_messages(chat_id, msg_id)
             except Exception:
                 pass
+
+
+async def approval_nudge_timer(client, pid: str):
+    """Remind the admin once if a payment screenshot waits too long.
+
+    Started when the screenshot reaches the admin group. If the
+    payment is still pending after APPROVAL_NUDGE_SECONDS, the admin
+    group gets one reminder with the Approve/Reject buttons, so the
+    approval can be done from the reminder itself. Cancelled as soon
+    as the payment is approved or rejected.
+    """
+    from keyboards import admin_kb
+    await asyncio.sleep(APPROVAL_NUDGE_SECONDS)
+
+    payment = await get_pending(pid)
+    if not payment:
+        return
+
+    bot  = BOTS.get(payment["bot_key"], {})
+    plan = bot.get("plans", {}).get(payment["plan_key"], {})
+    uname = f"@{payment['username']}" if payment.get("username") not in (None, "N/A") else "No username"
+
+    try:
+        await client.send_message(
+            ADMIN_GROUP,
+            f"<b>⏰ PAYMENT AWAITING APPROVAL (30 MIN)</b>\n\n"
+            f"<blockquote><b>👤 User:</b> <a href=\"tg://user?id={payment['user_id']}\">{esc(payment.get('first_name', 'User'))}</a>\n"
+            f"<b>🔗 Username:</b> {esc(uname)}\n"
+            f"<b>🆔 User ID:</b> <code>{payment['user_id']}</code>\n"
+            f"<b>🤖 Bot:</b> {esc(bot.get('name', '?'))}\n"
+            f"<b>📅 Plan:</b> {esc(plan.get('label', '?'))}\n"
+            f"<b>💰 Amount:</b> ₹{esc(payment.get('amount', plan.get('price', '?')))}</b></blockquote>\n\n"
+            f"<b>👇 Approve or reject below.</b>",
+            reply_markup=admin_kb(pid),
+        )
+    except Exception as e:
+        logger.warning(f"Approval nudge {pid}: {e}")
 
 
 async def qr_expiry_timer(client, user_id: int, pid: str,
@@ -240,6 +340,187 @@ async def qr_expiry_timer(client, user_id: int, pid: str,
         f"<b>🤖 Bot:</b> {esc(bot.get('name', '?'))}\n"
         f"<b>📅 Plan:</b> {esc(plan.get('label', '?'))} | ₹{esc(plan.get('price', '?'))}\n"
         f"<code>{datetime.now().strftime('%d %b %Y %H:%M:%S')}</code>"
+    )
+
+
+async def start_payment(client, user_id: int, bot_key: str, plan_key: str,
+                        amount: int | None = None,
+                        username: str = "N/A", first_name: str = "User"):
+    """Start a payment for a user (shared by plan select and /createlink).
+
+    Creates the pending payment (custom amount if given, else the plan
+    price), sends the user the payment message (banner + Pay Now /
+    Resend Link buttons) and the screenshot prompt, and starts the
+    5-minute expiry timer. Returns (pid, link). Raises if the messages
+    cannot be delivered (e.g. the user never started the bot) — the
+    pending payment is cleaned up first in that case.
+    """
+    from keyboards import pay_kb
+    bot  = BOTS[bot_key]
+    plan = bot["plans"][plan_key]
+    amount = plan["price"] if amount is None else amount
+    label  = plan["label"]
+    pid    = make_pending_id(user_id, bot_key, plan_key)
+
+    await clear_user_pending(user_id, client)
+
+    pay_data = {
+        "user_id":    user_id,
+        "username":   username,
+        "first_name": first_name,
+        "bot_key":    bot_key,
+        "plan_key":   plan_key,
+        "amount":     amount,
+        "ts":         datetime.now().isoformat(),
+        "chat_id":    user_id,
+    }
+    # Save to memory + MongoDB
+    pending_pays[pid] = pay_data
+    await add_pending(pid, pay_data)
+
+    user_state[user_id] = {
+        "bot_key":             bot_key,
+        "plan_key":            plan_key,
+        "pending_id":          pid,
+        "chat_id":             user_id,
+        "awaiting_screenshot": True,
+    }
+
+    link = payment_link(pid)
+    caption = payment_caption(amount, label, link)
+    try:
+        banner = pay_banner_photo()
+        if banner is not None:
+            pay_msg = await client.send_photo(
+                user_id, photo=banner, caption=caption,
+                reply_markup=pay_kb(link, pid),
+            )
+        else:
+            # Banner missing — text only.
+            pay_msg = await client.send_message(
+                user_id, caption, reply_markup=pay_kb(link, pid))
+        proof_msg = await client.send_message(
+            user_id,
+            "<b>📸 SEND A SCREENSHOT OF THE PAYMENT FOR VERIFICATION.</b>\n\n"
+            "<b>Use /cancel to cancel the process.</b>",
+        )
+    except Exception:
+        # Could not reach the user (never started the bot / blocked it) —
+        # do not leave a dangling pending payment behind.
+        pending_pays.pop(pid, None)
+        await del_pending(pid)
+        user_state.pop(user_id, None)
+        raise
+
+    user_state[user_id]["qr_message_id"] = pay_msg.id
+    user_state[user_id]["proof_message_id"] = proof_msg.id
+
+    uname = f"@{username}" if username != "N/A" else "No username"
+    await log(client,
+        f"<b>🔔 QR CODE GENERATED</b>\n\n"
+        f"<b>👤 User:</b> <a href=\"tg://user?id={user_id}\">{esc(first_name)}</a>\n"
+        f"<b>🔗 Username:</b> {esc(uname)}\n"
+        f"<b>🆔 User ID:</b> <code>{user_id}</code>\n"
+        f"<b>🤖 Bot:</b> {esc(bot['name'])} (<code>{esc(bot['username'])}</code>)\n"
+        f"<b>📅 Plan:</b> {esc(label)}\n"
+        f"<b>💰 Amount:</b> ₹{amount}\n"
+        f"<code>{datetime.now().strftime('%d %b %Y %H:%M:%S')}</code>\n"
+        f"<b>⏳ QR valid for 5 minutes</b>"
+    )
+
+    task = asyncio.create_task(
+        qr_expiry_timer(client, user_id, pid, bot_key, plan_key, user_id)
+    )
+    expiry_tasks[pid] = task
+    return pid, link
+
+
+def discounted_amount(amount: int, promo: dict) -> int:
+    """Price after a promo code (never below ₹1)."""
+    if promo["type"] == "percent":
+        return max(1, round(amount * (1 - promo["value"] / 100)))
+    return max(1, amount - promo["value"])
+
+
+async def apply_promo_code(client, user_id: int, code_str: str):
+    """Apply a promo code to the user's pending payment.
+
+    Returns (ok, reply_text). On success the pending payment's amount
+    is lowered (memory + MongoDB), one use of the code is consumed,
+    and the payment message is updated to show the discount (the promo
+    button is removed — one code per payment). The /pay page reads the
+    amount live, so the same link now shows the discounted price + QR.
+    """
+    from keyboards import pay_kb
+    code = (code_str or "").strip().upper()
+    if not code:
+        return False, "<b>❌ Send a promo code.</b>"
+
+    promo = await get_promo(code)
+    if not promo:
+        return False, "<b>❌ Invalid promo code.</b>\n<b>Check the code and try again, or /cancel to skip.</b>"
+    max_uses = promo.get("max_uses")
+    if max_uses is not None and promo.get("uses", 0) >= max_uses:
+        return False, "<b>❌ This promo code has reached its usage limit.</b>"
+
+    state = user_state.get(user_id, {})
+    pid = state.get("pending_id")
+    payment = pending_pays.get(pid) if pid else None
+    if not pid or not payment:
+        payment = await get_pending(pid) if pid else None
+    if not pid or not payment:
+        return False, "<b>⚠️ No active payment found. Please /start again.</b>"
+    if not state.get("awaiting_screenshot") or state.get("pending_id") != pid:
+        return False, "<b>⚠️ This payment is already under review.</b>"
+
+    original = payment["amount"]
+    new_amount = discounted_amount(original, promo)
+    if new_amount >= original:
+        return False, "<b>❌ This code gives no discount on this plan.</b>"
+
+    # Consume one use first (atomic) — if the last use was just taken
+    # by someone else, nothing is changed and the user is told so.
+    if not await use_promo(code):
+        return False, "<b>❌ This promo code has just reached its usage limit.</b>"
+
+    payment = dict(payment)
+    payment["amount"] = new_amount
+    payment["promo_code"] = code
+    payment["original_amount"] = original
+    pending_pays[pid] = payment
+    await add_pending(pid, payment)
+
+    bot  = BOTS.get(payment["bot_key"], {})
+    plan = bot.get("plans", {}).get(payment["plan_key"], {})
+    link = payment_link(pid)
+    caption = payment_caption(
+        new_amount, plan.get("label", ""), link,
+        promo_code=code, original_amount=original,
+    )
+    chat_id = state.get("chat_id", user_id)
+    qr_message_id = state.get("qr_message_id")
+    if qr_message_id:
+        try:
+            await client.edit_message_caption(
+                chat_id, qr_message_id, caption=caption,
+                reply_markup=pay_kb(link, pid, show_promo=False),
+            )
+        except Exception:
+            try:
+                await client.edit_message_text(
+                    chat_id, qr_message_id, caption,
+                    reply_markup=pay_kb(link, pid, show_promo=False),
+                )
+            except Exception as e:
+                logger.warning(f"Promo edit {pid}: {e}")
+
+    user_state[user_id].pop("awaiting_promo", None)
+    saved = original - new_amount
+    return True, (
+        f"<b>✅ PROMO APPLIED!</b>\n\n"
+        f"<blockquote><b>🎟️ Code: {esc(code)}\n"
+        f"💰 You save ₹{saved} — new amount: ₹{new_amount}</b></blockquote>\n\n"
+        f"<b>Pay ₹{new_amount} via the payment link, then send the screenshot.</b>"
     )
 
 

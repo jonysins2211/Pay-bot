@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 from datetime import datetime, timezone
@@ -6,11 +7,14 @@ from pyrogram.types import Message
 
 from info import BOTS, ADMIN_GROUP, OWNER_USERNAME
 from keyboards import home_kb, admin_kb
-from utils import user_state, pending_pays, cancel_expiry_by_pid, log, reply_if_banned, esc
+from utils import (
+    user_state, pending_pays, nudge_tasks, approval_nudge_timer,
+    cancel_expiry_by_pid, log, reply_if_banned, esc, apply_promo_code,
+)
 
 logger = logging.getLogger(__name__)
 
-COMMANDS = ["start", "myplan", "myhistory", "mypayments", "stats", "report", "owner_cmd", "pending", "cancel", "broadcast", "ban", "unban", "bans"]
+COMMANDS = ["start", "myplan", "myhistory", "mypayments", "stats", "createlink", "addpromo", "delpromo", "promos", "report", "owner_cmd", "pending", "cancel", "broadcast", "ban", "unban", "bans"]
 
 # ── "Use /start" fallback spam guard ──────────────────────────
 # After a redeploy the bot can receive the same update again
@@ -75,7 +79,7 @@ async def screenshot_handler(client: Client, message: Message):
         f"<b>🆔 User ID:</b> <code>{user.id}</code>\n"
         f"<b>🤖 Bot:</b> {esc(bot['name'])} (<code>{esc(bot['username'])}</code>)\n"
         f"<b>📅 Plan:</b> {esc(plan['label'])}\n"
-        f"<b>💰 Amount:</b> ₹{plan['price']}\n"
+        f"<b>💰 Amount:</b> ₹{payment.get('amount', plan['price'])}\n"
         f"<code>{datetime.now().strftime('%d %b %Y %H:%M:%S')}</code>\n"
         f"<b>🔑 ID:</b> <code>{esc(pid)}</code>"
     )
@@ -103,6 +107,9 @@ async def screenshot_handler(client: Client, message: Message):
         logger.error(f"Forward to admin: {e}")
         await message.reply_text("<b>❌ Error sending to admin. Try again.</b>")
         return
+
+    # Remind the admin once if this screenshot waits 30 min for approval.
+    nudge_tasks[pid] = asyncio.create_task(approval_nudge_timer(client, pid))
 
     user_state.pop(user.id, None)
     await message.reply_text(
@@ -133,7 +140,14 @@ async def text_handler(client: Client, message: Message):
     user  = message.from_user
     state = user_state.get(user.id, {})
 
-    if state.get("action") == "report":
+    if state.get("awaiting_promo"):
+        # The user tapped "Apply Promo Code" — this text is the code.
+        # On success awaiting_promo is cleared; on failure it stays
+        # set so the user can try another code (or /cancel to skip).
+        ok, reply = await apply_promo_code(client, user.id, message.text)
+        await message.reply_text(reply)
+
+    elif state.get("action") == "report":
         try:
             await client.send_message(
                 ADMIN_GROUP,

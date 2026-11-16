@@ -14,7 +14,7 @@ from keyboards import (
 )
 from utils import (
     user_state, pending_pays, expiry_tasks,
-    upi_pay_url, payment_link, make_pending_id, fmt_dt, log,
+    payment_link, make_pending_id, fmt_dt, log,
     cancel_expiry_by_pid, qr_expiry_timer, clear_user_pending, answer_if_banned, esc
 )
 from database.db import (
@@ -134,15 +134,15 @@ async def callbacks(client: Client, query: CallbackQuery):
 
         # No QR in the bot any more — the banner image goes here instead.
         # The QR still lives on the payment-link page (/pay/<pid>) for anyone
-        # who wants to scan it. One-tap pay: the upi:// link as a button,
-        # plus the shareable https payment link in the caption.
-        upi = upi_pay_url(amount, note)
+        # who wants to scan it. The Pay Now button opens the payment page
+        # (Telegram buttons only allow https links, not upi://) — the page
+        # itself has the button that opens the UPI app.
         link = payment_link(pid)
         caption = (
             f"<b>🧾 PAYMENT DETAILS:</b>\n\n"
             f"<blockquote><b>• PAY ₹{amount} — PREMIUM TIME: {esc(label)}\n"
             f"• PAYMENT LINK VALID FOR 5 MINUTES</b></blockquote>\n\n"
-            f"<b>💳 TAP “PAY NOW” BELOW — YOUR UPI APP OPENS WITH ₹{amount} ALREADY FILLED</b>\n"
+            f"<b>💳 TAP “PAY NOW” BELOW TO OPEN THE PAYMENT PAGE</b>\n"
             f"<b>🔗 Payment Link:</b> <a href=\"{link}\">{link}</a>\n\n"
             f"<b>⚠️ AFTER PAYMENT:</b>\n"
             f"<b>📸 SEND THE PAYMENT SCREENSHOT HERE</b>"
@@ -150,11 +150,11 @@ async def callbacks(client: Client, query: CallbackQuery):
         banner = pay_banner_photo()
         if banner is not None:
             pay_msg = await query.message.reply_photo(
-                photo=banner, caption=caption, reply_markup=pay_kb(upi),
+                photo=banner, caption=caption, reply_markup=pay_kb(link),
             )
         else:
             # Banner missing (e.g. fresh checkout without the asset) — text only.
-            pay_msg = await query.message.reply_text(caption, reply_markup=pay_kb(upi))
+            pay_msg = await query.message.reply_text(caption, reply_markup=pay_kb(link))
         proof_msg = await query.message.reply_text(
             "<b>📸 SEND A SCREENSHOT OF THE PAYMENT FOR VERIFICATION.</b>\n\n"
             "<b>Use /cancel to cancel the process.</b>"

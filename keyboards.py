@@ -38,10 +38,15 @@ def plan_kb(bot_key: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def pay_kb(upi_url: str) -> InlineKeyboardMarkup:
-    """One-tap pay button: opens the UPI app with the amount pre-filled."""
+def pay_kb(pay_url: str) -> InlineKeyboardMarkup:
+    """Pay Now button: opens the bot's payment page (https).
+
+    Telegram only allows http(s)/tg:// URLs in buttons, so the button must
+    open the /pay page — the page itself has the button that opens the UPI
+    app (upi:// works from a web page, not from a Telegram button).
+    """
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("💳 Pay Now — UPI App", url=upi_url)
+        InlineKeyboardButton("💳 Pay Now", url=pay_url)
     ]])
 
 

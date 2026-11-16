@@ -76,13 +76,25 @@ def upi_pay_url(amount: int, note: str) -> str:
     )
 
 
+def _public_base_url() -> str:
+    """Public base URL of this bot's web server.
+
+    Set PUBLIC_URL (e.g. https://my-bot.koyeb.app) where the bot is hosted.
+    Falls back to the Heroku-style URL from APP_NAME.
+    """
+    base = os.environ.get("PUBLIC_URL", "").strip().rstrip("/")
+    if base:
+        return base
+    return f"https://{APP_NAME}.herokuapp.com"
+
+
 def payment_link(pid: str) -> str:
     """Shareable https payment link for a pending payment.
 
     Served by this bot's own web server (/pay/<pid>) — the page shows the
     amount and a Pay button that opens the UPI app. No third-party service.
     """
-    return f"https://{APP_NAME}.herokuapp.com/pay/{pid}"
+    return f"{_public_base_url()}/pay/{pid}"
 
 
 def make_qr(amount: int, note: str) -> BytesIO:

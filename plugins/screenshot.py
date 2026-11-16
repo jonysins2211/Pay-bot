@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime
+import time
+from datetime import datetime, timezone
 from pyrogram import Client, filters
 from pyrogram.types import Message
 
@@ -10,6 +11,35 @@ from utils import user_state, pending_pays, cancel_expiry_by_pid, log, reply_if_
 logger = logging.getLogger(__name__)
 
 COMMANDS = ["start", "myplan", "myhistory", "report", "owner_cmd", "pending", "cancel", "broadcast", "ban", "unban", "bans"]
+
+# ── "Use /start" fallback spam guard ──────────────────────────
+# After a redeploy the bot can receive the same update again
+# (pending-updates replay) or a user can tap /start repeatedly while
+# the bot is still starting — either way the fallback below used to
+# fire once per update and spam the same message in a loop. Two guards:
+#   1. ignore stale updates (a message older than 2 min is a replay,
+#      not a live user action), and
+#   2. one fallback reply per user per 30 s.
+_FALLBACK_COOLDOWN_S = 30
+_FALLBACK_MAX_AGE_S = 120
+_fallback_last_sent: dict[int, float] = {}
+
+
+def _should_send_fallback(message: Message) -> bool:
+    """True only if this fallback reply should actually be sent."""
+    try:
+        age = (datetime.now(timezone.utc) - message.date).total_seconds()
+    except Exception:
+        age = 0
+    if age > _FALLBACK_MAX_AGE_S:
+        return False
+    now = time.monotonic()
+    user_id = message.from_user.id
+    last = _fallback_last_sent.get(user_id, 0)
+    if now - last < _FALLBACK_COOLDOWN_S:
+        return False
+    _fallback_last_sent[user_id] = now
+    return True
 
 
 @Client.on_message(filters.private & (filters.photo | filters.document))
@@ -121,4 +151,7 @@ async def text_handler(client: Client, message: Message):
             await message.reply_text("<b>❌ Error. Try again later.</b>")
         user_state.pop(user.id, None)
     else:
-        await message.reply_text("<b>👋 Use /start to navigate the bot.</b>", reply_markup=home_kb())
+        # Guarded: a replayed/duplicate update (or rapid re-taps) can no
+        # longer spam this same message in a loop after a redeploy.
+        if _should_send_fallback(message):
+            await message.reply_text("<b>👋 Use /start to navigate the bot.</b>", reply_markup=home_kb())

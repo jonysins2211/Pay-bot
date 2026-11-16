@@ -80,10 +80,15 @@ def _public_base_url() -> str:
     """Public base URL of this bot's web server.
 
     Set PUBLIC_URL (e.g. https://my-bot.koyeb.app) where the bot is hosted.
+    The scheme may be left off (careful-lilly-movieloverzzz.koyeb.app) —
+    https:// is added then, because Telegram rejects a button/WebApp URL
+    without a scheme (BUTTON_URL_INVALID).
     Falls back to the Heroku-style URL from APP_NAME.
     """
     base = os.environ.get("PUBLIC_URL", "").strip().rstrip("/")
     if base:
+        if not base.startswith(("http://", "https://")):
+            base = "https://" + base
         return base
     return f"https://{APP_NAME}.herokuapp.com"
 

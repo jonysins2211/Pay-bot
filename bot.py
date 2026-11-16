@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import html as html_lib
 import logging
 import os
@@ -15,7 +16,7 @@ logging.getLogger("aiohttp").setLevel(logging.ERROR)
 from info import *
 from client import PayBot
 from database.db import get_pending
-from utils import ping_server, subscription_expiry_checker, upi_pay_url
+from utils import ping_server, subscription_expiry_checker, upi_pay_url, make_qr
 
 # ── Web health check server ───────────────────────────────────
 async def health_check(request):
@@ -24,13 +25,12 @@ async def health_check(request):
 
 # ── UPI payment link page ─────────────────────────────────────
 # GET /pay/<pid> — the shareable https payment link sent by the bot.
-# Looks the pending payment up in MongoDB, then shows the amount and a
-# Pay button that opens the UPI app (upi:// deep link).
-# The pid expires with the QR (5 min); after that the link shows expired.
-# No QR on this page any more — just the Pay button (Joe's call).
-# The page is opened as a Telegram Mini App (WebApp button) — the
-# telegram-web-app.js script expands it full-height inside Telegram.
-# It still works as a plain web page (the script is guarded).
+# Looks the pending payment up in MongoDB, then shows the QR code
+# (above the price), the amount and a Pay button that opens the UPI
+# app (upi:// deep link). The pid expires with the QR (5 min); after
+# that the link shows expired. The page opens in the browser (plain
+# https link button) — the Mini App version did not work because the
+# UPI button inside the Mini App WebView would not open the UPI app.
 PAY_PAGE = """<!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -46,35 +46,18 @@ h1{{font-size:20px;margin:0 0 6px}}
 .pay{{display:block;background:#22c55e;color:#fff;font-weight:700;font-size:19px;
 text-decoration:none;padding:15px 10px;border-radius:12px;margin:6px 0 14px}}
 .hint{{font-size:13px;color:#94a3b8;line-height:1.5}}
+img{{width:200px;height:200px;background:#fff;border-radius:12px;padding:8px;margin-top:8px}}
 </style></head><body><div class="card">
 <h1>💳 ML Payment Bot</h1>
 <p><b>{bot_name}</b> is requesting a payment of</p>
+<img src="data:image/png;base64,{qr_b64}" alt="Scan to pay">
+<p class="hint">Scan the QR with any UPI app</p>
 <div class="amount">₹{amount}</div>
 <p class="plan">📅 Plan: {label}</p>
-<a class="pay" href="{upi}" id="payBtn">💳 Pay ₹{amount} via UPI</a>
+<a class="pay" href="{upi}">💳 Pay ₹{amount} via UPI</a>
 <p class="hint">Tap Pay — your UPI app opens with the amount already filled.
 After paying, send the payment screenshot to the bot.</p>
-</div>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script>
-if (window.Telegram && Telegram.WebApp) {{
-  Telegram.WebApp.ready();
-  Telegram.WebApp.expand();
-  Telegram.WebApp.setHeaderColor('#0f172a');
-  Telegram.WebApp.setBackgroundColor('#0f172a');
-}}
-// In the Mini App, a plain upi:// link makes the WebView itself try to
-// load it and fail (net::ERR_UNKNOWN_URL_SCHEME). Open it through
-// Telegram instead, so the UPI app opens. In a normal browser the plain
-// link works, so only intercept inside Telegram.
-document.getElementById('payBtn').addEventListener('click', function (e) {{
-  if (window.Telegram && Telegram.WebApp && Telegram.WebApp.openLink) {{
-    e.preventDefault();
-    Telegram.WebApp.openLink(document.getElementById('payBtn').getAttribute('href'));
-  }}
-}});
-</script>
-</body></html>"""
+</div></body></html>"""
 
 EXPIRED_PAGE = """<!doctype html>
 <html><head><meta charset="utf-8">
@@ -99,11 +82,13 @@ async def pay_page(request):
     amount = payment["amount"]
     note = f"Premium {bot.get('username', '')} {plan.get('label', '')}"
     upi = upi_pay_url(amount, note)
+    qr_b64 = base64.b64encode(make_qr(amount, note).getvalue()).decode()
     page = PAY_PAGE.format(
         amount=amount,
         bot_name=html_lib.escape(str(bot.get("name", "Premium"))),
         label=html_lib.escape(str(plan.get("label", ""))),
         upi=html_lib.escape(upi, quote=True),
+        qr_b64=qr_b64,
     )
     return web.Response(text=page, content_type="text/html")
 

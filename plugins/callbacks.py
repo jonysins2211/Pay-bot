@@ -132,18 +132,18 @@ async def callbacks(client: Client, query: CallbackQuery):
             "awaiting_screenshot": True,
         }
 
-        # No QR in the bot any more — the banner image goes here instead.
-        # The QR still lives on the payment-link page (/pay/<pid>) for anyone
-        # who wants to scan it. The Pay Now button opens the payment page
-        # as a Telegram Mini App (WebApp button, opens inside Telegram,
-        # not in Chrome) — the page itself has the button that opens the
-        # UPI app.
+        # No QR in the bot's payment message any more — the banner image
+        # goes here instead. The QR lives on the payment-link page
+        # (/pay/<pid>), above the price, for anyone who wants to scan it.
+        # The Pay Now button opens the payment page in the browser
+        # (Chrome) — the Mini App version did not work because the UPI
+        # button inside the Mini App WebView would not open the UPI app.
         link = payment_link(pid)
         caption = (
             f"<b>🧾 PAYMENT DETAILS:</b>\n\n"
             f"<blockquote><b>• PAY ₹{amount} — PREMIUM TIME: {esc(label)}\n"
             f"• PAYMENT LINK VALID FOR 5 MINUTES</b></blockquote>\n\n"
-            f"<b>💳 TAP “PAY NOW” BELOW — THE PAYMENT PAGE OPENS INSIDE TELEGRAM</b>\n"
+            f"<b>💳 TAP “PAY NOW” BELOW TO OPEN THE PAYMENT PAGE</b>\n"
             f"<b>🔗 Payment Link:</b> <a href=\"{link}\">{link}</a>\n\n"
             f"<b>⚠️ AFTER PAYMENT:</b>\n"
             f"<b>📸 SEND THE PAYMENT SCREENSHOT HERE</b>"

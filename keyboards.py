@@ -38,6 +38,13 @@ def plan_kb(bot_key: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def pay_kb(upi_url: str) -> InlineKeyboardMarkup:
+    """One-tap pay button: opens the UPI app with the amount pre-filled."""
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("💳 Pay Now — UPI App", url=upi_url)
+    ]])
+
+
 def home_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("🏠 HOME", callback_data="home")

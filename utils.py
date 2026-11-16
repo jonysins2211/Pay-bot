@@ -64,13 +64,30 @@ async def answer_if_banned(query) -> bool:
     return True
 
 
-def make_qr(amount: int, note: str) -> BytesIO:
-    upi_url = (
+def upi_pay_url(amount: int, note: str) -> str:
+    """UPI deep link: tapping it opens the UPI app with payee + amount pre-filled.
+
+    This is the same URL the QR code encodes — the QR is just this link
+    drawn as a picture. Sending it as a button/link skips the scan step.
+    """
+    return (
         f"upi://pay?pa={UPI_ID}&pn={UPI_NAME.replace(' ', '%20')}"
         f"&am={amount}&cu=INR&tn={note.replace(' ', '%20')}"
     )
+
+
+def payment_link(pid: str) -> str:
+    """Shareable https payment link for a pending payment.
+
+    Served by this bot's own web server (/pay/<pid>) — the page shows the
+    amount and a Pay button that opens the UPI app. No third-party service.
+    """
+    return f"https://{APP_NAME}.herokuapp.com/pay/{pid}"
+
+
+def make_qr(amount: int, note: str) -> BytesIO:
     qr = qrcode.QRCode(box_size=12, border=4)
-    qr.add_data(upi_url)
+    qr.add_data(upi_pay_url(amount, note))
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
     buf = BytesIO()

@@ -1,17 +1,20 @@
 import asyncio
+import base64
 import logging
+import os
 from datetime import datetime, timedelta
+from io import BytesIO
 from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery
 
 from info import BOTS, ADMIN_IDS, LOGS_CHANNEL, SUPPORT_GROUP, OWNER_USERNAME, UPDATES_CHANNEL, QR_EXPIRY_SECONDS
 from keyboards import (
     main_menu_kb, plan_kb, home_kb, expired_kb,
-    help_kb, admin_kb, renew_kb, telegram_url
+    help_kb, admin_kb, renew_kb, pay_kb, telegram_url
 )
 from utils import (
     user_state, pending_pays, expiry_tasks,
-    make_qr, make_pending_id, fmt_dt, log,
+    upi_pay_url, payment_link, make_pending_id, fmt_dt, log,
     cancel_expiry_by_pid, qr_expiry_timer, clear_user_pending, answer_if_banned, esc
 )
 from database.db import (
@@ -20,6 +23,31 @@ from database.db import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Payment banner shown instead of the QR code. Stored as base64 text
+# (assets/pay_banner.b64) because the repo push carries text files only.
+# The QR still lives on the payment-link page (/pay/<pid>).
+PAY_BANNER_B64 = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "assets", "pay_banner.b64"
+)
+_BANNER_CACHE = None
+
+
+def pay_banner_photo():
+    """Banner image as a photo the bot can send (None if the asset is missing)."""
+    global _BANNER_CACHE
+    if _BANNER_CACHE is None:
+        try:
+            with open(PAY_BANNER_B64) as f:
+                _BANNER_CACHE = base64.b64decode(f.read())
+        except Exception:
+            _BANNER_CACHE = False
+    if not _BANNER_CACHE:
+        return None
+    buf = BytesIO(_BANNER_CACHE)
+    buf.name = "pay_banner.jpg"
+    return buf
 
 
 @Client.on_callback_query()
@@ -104,23 +132,34 @@ async def callbacks(client: Client, query: CallbackQuery):
             "awaiting_screenshot": True,
         }
 
-        qr_buf = make_qr(amount, note)
-        qr_msg = await query.message.reply_photo(
-            photo=qr_buf,
-            caption=(
-                f"<b>🧾 PAYMENT DETAILS:</b>\n\n"
-                f"<blockquote><b>• SCAN THE QR CODE AND PAY ₹{amount}\n"
-                f"• PREMIUM TIME: {esc(label)}\n"
-                f"• QR CODE VALID FOR 5 MINUTES</b></blockquote>\n\n"
-                f"<b>⚠️ AFTER PAYMENT:</b>\n"
-                f"<b>📸 SEND THE PAYMENT SCREENSHOT HERE</b>"
-            ),
+        # No QR in the bot any more — the banner image goes here instead.
+        # The QR still lives on the payment-link page (/pay/<pid>) for anyone
+        # who wants to scan it. One-tap pay: the upi:// link as a button,
+        # plus the shareable https payment link in the caption.
+        upi = upi_pay_url(amount, note)
+        link = payment_link(pid)
+        caption = (
+            f"<b>🧾 PAYMENT DETAILS:</b>\n\n"
+            f"<blockquote><b>• PAY ₹{amount} — PREMIUM TIME: {esc(label)}\n"
+            f"• PAYMENT LINK VALID FOR 5 MINUTES</b></blockquote>\n\n"
+            f"<b>💳 TAP “PAY NOW” BELOW — YOUR UPI APP OPENS WITH ₹{amount} ALREADY FILLED</b>\n"
+            f"<b>🔗 Payment Link:</b> <a href=\"{link}\">{link}</a>\n\n"
+            f"<b>⚠️ AFTER PAYMENT:</b>\n"
+            f"<b>📸 SEND THE PAYMENT SCREENSHOT HERE</b>"
         )
+        banner = pay_banner_photo()
+        if banner is not None:
+            pay_msg = await query.message.reply_photo(
+                photo=banner, caption=caption, reply_markup=pay_kb(upi),
+            )
+        else:
+            # Banner missing (e.g. fresh checkout without the asset) — text only.
+            pay_msg = await query.message.reply_text(caption, reply_markup=pay_kb(upi))
         proof_msg = await query.message.reply_text(
             "<b>📸 SEND A SCREENSHOT OF THE PAYMENT FOR VERIFICATION.</b>\n\n"
             "<b>Use /cancel to cancel the process.</b>"
         )
-        user_state[user.id]["qr_message_id"] = qr_msg.id
+        user_state[user.id]["qr_message_id"] = pay_msg.id
         user_state[user.id]["proof_message_id"] = proof_msg.id
         await query.answer()
 

@@ -12,7 +12,7 @@ from keyboards import (
 from utils import (
     user_state, pending_pays, expiry_tasks,
     make_qr, make_pending_id, fmt_dt, log,
-    cancel_expiry_by_pid, qr_expiry_timer, clear_user_pending, answer_if_banned
+    cancel_expiry_by_pid, qr_expiry_timer, clear_user_pending, answer_if_banned, esc
 )
 from database.db import (
     add_pending, get_pending, del_pending,
@@ -36,15 +36,15 @@ async def callbacks(client: Client, query: CallbackQuery):
         user_state.pop(user.id, None)
 
         welcome = (
-            f"👋 **Hello {user.first_name}!**\n\n"
-            f"🚀 **Welcome to ML Payment Bot!**\n"
-            f"💳 *Fast • Secure • Reliable Payments*\n\n"
-            f"✨ **What you can do:**\n"
-            f"• Access Premium Bots\n"
+            f"<b>👋 Hello {esc(user.first_name)}!</b>\n\n"
+            f"<b>🚀 Welcome to ML Payment Bot!</b>\n"
+            f"<b>💳 Fast • Secure • Reliable Payments</b>\n\n"
+            f"<b>✨ What you can do:</b>\n"
+            f"<blockquote><b>• Access Premium Bots\n"
             f"• Premium Files to Link bots\n"
             f"• Get Combo Deals\n"
-            f"• Instant Support\n\n"
-            f"👇 **Use the buttons below to continue**"
+            f"• Instant Support</b></blockquote>\n\n"
+            f"<b>👇 Use the buttons below to continue</b>"
         )
         try:
             await query.message.edit_text(welcome, reply_markup=main_menu_kb())
@@ -108,17 +108,17 @@ async def callbacks(client: Client, query: CallbackQuery):
         qr_msg = await query.message.reply_photo(
             photo=qr_buf,
             caption=(
-                f"🧾 **PAYMENT DETAILS:**\n\n"
-                f"• SCAN THE QR CODE AND PAY **₹{amount}**\n"
-                f"• PREMIUM TIME: **{label}**\n"
-                f"• QR CODE VALID FOR **5 MINUTES**\n\n"
-                f"⚠️ **AFTER PAYMENT:**\n"
-                f"📸 • SEND THE PAYMENT SCREENSHOT HERE"
+                f"<b>🧾 PAYMENT DETAILS:</b>\n\n"
+                f"<blockquote><b>• SCAN THE QR CODE AND PAY ₹{amount}\n"
+                f"• PREMIUM TIME: {esc(label)}\n"
+                f"• QR CODE VALID FOR 5 MINUTES</b></blockquote>\n\n"
+                f"<b>⚠️ AFTER PAYMENT:</b>\n"
+                f"<b>📸 SEND THE PAYMENT SCREENSHOT HERE</b>"
             ),
         )
         proof_msg = await query.message.reply_text(
-            "📸 **SEND A SCREENSHOT OF THE PAYMENT FOR VERIFICATION.**\n\n"
-            "*USE* /cancel *TO CANCEL THE PROCESS.*"
+            "<b>📸 SEND A SCREENSHOT OF THE PAYMENT FOR VERIFICATION.</b>\n\n"
+            "<b>Use /cancel to cancel the process.</b>"
         )
         user_state[user.id]["qr_message_id"] = qr_msg.id
         user_state[user.id]["proof_message_id"] = proof_msg.id
@@ -126,15 +126,15 @@ async def callbacks(client: Client, query: CallbackQuery):
 
         uname = f"@{user.username}" if user.username else "No username"
         await log(client,
-            f"🔔 **QR CODE GENERATED**\n\n"
-            f"👤 **User:** [{user.first_name}](tg://user?id={user.id})\n"
-            f"🔗 **Username:** {uname}\n"
-            f"🆔 **User ID:** `{user.id}`\n"
-            f"🤖 **Bot:** {bot['name']} (`{bot['username']}`)\n"
-            f"📅 **Plan:** {label}\n"
-            f"💰 **Amount:** ₹{amount}\n"
-            f"🕐 `{datetime.now().strftime('%d %b %Y %H:%M:%S')}`\n"
-            f"⏳ QR valid for 5 minutes"
+            f"<b>🔔 QR CODE GENERATED</b>\n\n"
+            f"<b>👤 User:</b> <a href=\"tg://user?id={user.id}\">{esc(user.first_name)}</a>\n"
+            f"<b>🔗 Username:</b> {esc(uname)}\n"
+            f"<b>🆔 User ID:</b> <code>{user.id}</code>\n"
+            f"<b>🤖 Bot:</b> {esc(bot['name'])} (<code>{esc(bot['username'])}</code>)\n"
+            f"<b>📅 Plan:</b> {esc(label)}\n"
+            f"<b>💰 Amount:</b> ₹{amount}\n"
+            f"<code>{datetime.now().strftime('%d %b %Y %H:%M:%S')}</code>\n"
+            f"<b>⏳ QR valid for 5 minutes</b>"
         )
 
         task = asyncio.create_task(
@@ -158,11 +158,11 @@ async def callbacks(client: Client, query: CallbackQuery):
     # ── PREMIUM PROOF ─────────────────────────────────────────
     elif data == "proof":
         text = (
-            "🧾 **PREMIUM PROOF**\n\n"
-            "✅ *All payments verified by admin.*\n\n"
+            "<b>🧾 PREMIUM PROOF</b>\n\n"
+            "<blockquote><b>✅ All payments verified by admin.\n"
             "💎 Hundreds of happy VIP members!\n"
-            "📌 For Proofs You can contact Admin\n"
-            f"Msg: {OWNER_USERNAME}"
+            "📌 For proofs, contact Admin</b></blockquote>\n\n"
+            f"<b>Msg: {esc(OWNER_USERNAME)}</b>"
         )
         try:
             await query.message.edit_text(text, reply_markup=home_kb())
@@ -173,14 +173,14 @@ async def callbacks(client: Client, query: CallbackQuery):
     # ── TUTORIAL ──────────────────────────────────────────────
     elif data == "tutorial":
         text = (
-            "🎓 **HOW TO BUY PREMIUM**\n\n"
-            "**Step 1** — Click the bot you want\n"
-            "**Step 2** — Select your plan\n"
-            "**Step 3** — Pay via QR Code or UPI ID\n"
-            "**Step 4** — Screenshot the confirmation\n"
-            "**Step 5** — Send screenshot here\n"
-            "**Step 6** — Wait for admin approval\n"
-            "**Step 7** — 🎉 Premium Activated!"
+            "<b>🎓 HOW TO BUY PREMIUM</b>\n\n"
+            "<blockquote><b>Step 1 — Click the bot you want\n"
+            "Step 2 — Select your plan\n"
+            "Step 3 — Pay via QR Code or UPI ID\n"
+            "Step 4 — Screenshot the confirmation\n"
+            "Step 5 — Send screenshot here\n"
+            "Step 6 — Wait for admin approval\n"
+            "Step 7 — 🎉 Premium Activated!</b></blockquote>"
         )
         try:
             await query.message.edit_text(text, reply_markup=home_kb())
@@ -191,15 +191,15 @@ async def callbacks(client: Client, query: CallbackQuery):
     # ── HELP ──────────────────────────────────────────────────
     elif data == "help":
         text = (
-            "👑 **PREMIUM SUPPORT & HELP DESK** 💎\n\n"
-            "*FOR QUERIES RELATED TO SUBSCRIPTIONS, OUR TEAM IS HERE 24/7.* ⚡\n\n"
-            "📋 **VIP TERMS & CONDITIONS:**\n"
-            "◆ *SEND A CLEAR SCREENSHOT (FAKE = INSTANT BAN)*\n"
-            "◆ *APPROVALS ARE QUICK BUT NEED VERIFICATION*\n"
-            "◆ *ALL PURCHASES ARE FINAL & NON-REFUNDABLE*\n\n"
-            f"💠 ADMIN: {OWNER_USERNAME}\n"
-            f"💠 COMMUNITY: {SUPPORT_GROUP}\n\n"
-            "*UPGRADE YOUR EXPERIENCE TODAY!* 💎"
+            "<b>👑 PREMIUM SUPPORT &amp; HELP DESK 💎</b>\n\n"
+            "<blockquote><b>FOR QUERIES RELATED TO SUBSCRIPTIONS, OUR TEAM IS HERE 24/7. ⚡</b></blockquote>\n\n"
+            "<b>📋 VIP TERMS &amp; CONDITIONS:</b>\n"
+            "<blockquote><b>◆ SEND A CLEAR SCREENSHOT (FAKE = INSTANT BAN)\n"
+            "◆ APPROVALS ARE QUICK BUT NEED VERIFICATION\n"
+            "◆ ALL PURCHASES ARE FINAL &amp; NON-REFUNDABLE</b></blockquote>\n\n"
+            f"<b>💠 ADMIN: {esc(OWNER_USERNAME)}</b>\n"
+            f"<b>💠 COMMUNITY: {esc(SUPPORT_GROUP)}</b>\n\n"
+            "<b>UPGRADE YOUR EXPERIENCE TODAY! 💎</b>"
         )
         try:
             await query.message.edit_text(text, reply_markup=help_kb())
@@ -211,14 +211,14 @@ async def callbacks(client: Client, query: CallbackQuery):
     elif data == "about":
         from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         text = (
-            "┌── **[ Payment Bot ]** ──┐\n"
+            "<b>┌── [ Payment Bot ] ──┐\n"
             "  ➤ 🤖 MY NAME : Payment Bot\n"
             "  ➤ 👑 OWNER : ML Owner\n"
             "  ➤ 📡 HOSTED ON : Heroku\n"
             "  ➤ 🌐 LANGUAGE : Python 3\n"
             "  ➤ 📚 LIBRARY : Pyrofork\n"
             "  ➤ 📋 VERSION : Advance v3.0\n"
-            "└─────────────────────┘"
+            "└─────────────────────┘</b>"
         )
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("ℹ️ NEED HELP / SUPPORT",
@@ -284,12 +284,13 @@ async def callbacks(client: Client, query: CallbackQuery):
         try:
             await client.send_message(
                 uid,
-                f"🎉 **PREMIUM ACTIVATED!**\n\n"
-                f"✅ *Payment approved by admin.*\n\n"
-                f"🤖 Bot: **{bot['username']}**\n"
-                f"📅 Plan: **{plan['label']}**\n"
-                f"📆 Valid Until: **{expiry_str}**\n\n"
-                f"Enjoy all premium features! 🚀\nJoin: {SUPPORT_GROUP}",
+                f"<b>🎉 PREMIUM ACTIVATED!</b>\n\n"
+                f"<blockquote><b>✅ Payment approved by admin.\n"
+                f"🤖 Bot: {esc(bot['username'])}\n"
+                f"📅 Plan: {esc(plan['label'])}\n"
+                f"📆 Valid Until: {esc(expiry_str)}</b></blockquote>\n\n"
+                f"<b>Enjoy all premium features! 🚀</b>\n"
+                f"<b>Join: {esc(SUPPORT_GROUP)}</b>",
             )
         except Exception as e:
             logger.error(f"Notify user {uid}: {e}")
@@ -297,7 +298,7 @@ async def callbacks(client: Client, query: CallbackQuery):
         await query.answer("✅ Approved!")
         try:
             orig = query.message.caption or query.message.text or ""
-            new_text = orig + f"\n\n✅ **APPROVED** by @{user.username or user.first_name}"
+            new_text = orig + f"\n\n<b>✅ APPROVED</b> by @{esc(user.username or user.first_name)}"
             if query.message.caption:
                 await query.message.edit_caption(new_text)
             else:
@@ -307,16 +308,16 @@ async def callbacks(client: Client, query: CallbackQuery):
 
         uname = f"@{payment['username']}" if payment['username'] != "N/A" else "No username"
         await log(client,
-            f"✅ **PAYMENT APPROVED**\n\n"
-            f"👤 **User:** [{payment['first_name']}](tg://user?id={uid})\n"
-            f"🔗 **Username:** {uname}\n"
-            f"🆔 **User ID:** `{uid}`\n"
-            f"🤖 **Bot:** {bot['name']} (`{bot['username']}`)\n"
-            f"📅 **Plan:** {plan['label']}\n"
-            f"💰 **Amount:** ₹{plan['price']}\n"
-            f"📆 **Valid Until:** {expiry_str}\n"
-            f"👮 **Approved by:** @{user.username or user.first_name}\n"
-            f"🕐 `{datetime.now().strftime('%d %b %Y %H:%M:%S')}`"
+            f"<b>✅ PAYMENT APPROVED</b>\n\n"
+            f"<b>👤 User:</b> <a href=\"tg://user?id={uid}\">{esc(payment['first_name'])}</a>\n"
+            f"<b>🔗 Username:</b> {esc(uname)}\n"
+            f"<b>🆔 User ID:</b> <code>{uid}</code>\n"
+            f"<b>🤖 Bot:</b> {esc(bot['name'])} (<code>{esc(bot['username'])}</code>)\n"
+            f"<b>📅 Plan:</b> {esc(plan['label'])}\n"
+            f"<b>💰 Amount:</b> ₹{plan['price']}\n"
+            f"<b>📆 Valid Until:</b> {esc(expiry_str)}\n"
+            f"<b>👮 Approved by:</b> @{esc(user.username or user.first_name)}\n"
+            f"<code>{datetime.now().strftime('%d %b %Y %H:%M:%S')}</code>"
         )
         pending_pays.pop(pid, None)
         await del_pending(pid)
@@ -352,9 +353,10 @@ async def callbacks(client: Client, query: CallbackQuery):
         try:
             await client.send_message(
                 uid,
-                f"❌ **PAYMENT REJECTED**\n\n"
-                f"*Screenshot for **{bot['name']}** ({plan['label']}) not approved.*\n\n"
-                f"Contact: {OWNER_USERNAME}\nOr /start to try again.",
+                f"<b>❌ PAYMENT REJECTED</b>\n\n"
+                f"<blockquote><b>Screenshot for {esc(bot['name'])} ({esc(plan['label'])}) not approved.</b></blockquote>\n\n"
+                f"<b>Contact: {esc(OWNER_USERNAME)}</b>\n"
+                f"<b>Or /start to try again.</b>",
             )
         except Exception as e:
             logger.error(f"Notify reject {uid}: {e}")
@@ -362,7 +364,7 @@ async def callbacks(client: Client, query: CallbackQuery):
         await query.answer("❌ Rejected.")
         try:
             orig = query.message.caption or query.message.text or ""
-            new_text = orig + f"\n\n❌ **REJECTED** by @{user.username or user.first_name}"
+            new_text = orig + f"\n\n<b>❌ REJECTED</b> by @{esc(user.username or user.first_name)}"
             if query.message.caption:
                 await query.message.edit_caption(new_text)
             else:
@@ -372,15 +374,15 @@ async def callbacks(client: Client, query: CallbackQuery):
 
         uname = f"@{payment['username']}" if payment['username'] != "N/A" else "No username"
         await log(client,
-            f"❌ **PAYMENT REJECTED**\n\n"
-            f"👤 **User:** [{payment['first_name']}](tg://user?id={uid})\n"
-            f"🔗 **Username:** {uname}\n"
-            f"🆔 **User ID:** `{uid}`\n"
-            f"🤖 **Bot:** {bot['name']} (`{bot['username']}`)\n"
-            f"📅 **Plan:** {plan['label']}\n"
-            f"💰 **Amount:** ₹{plan['price']}\n"
-            f"👮 **Rejected by:** @{user.username or user.first_name}\n"
-            f"🕐 `{datetime.now().strftime('%d %b %Y %H:%M:%S')}`"
+            f"<b>❌ PAYMENT REJECTED</b>\n\n"
+            f"<b>👤 User:</b> <a href=\"tg://user?id={uid}\">{esc(payment['first_name'])}</a>\n"
+            f"<b>🔗 Username:</b> {esc(uname)}\n"
+            f"<b>🆔 User ID:</b> <code>{uid}</code>\n"
+            f"<b>🤖 Bot:</b> {esc(bot['name'])} (<code>{esc(bot['username'])}</code>)\n"
+            f"<b>📅 Plan:</b> {esc(plan['label'])}\n"
+            f"<b>💰 Amount:</b> ₹{plan['price']}\n"
+            f"<b>👮 Rejected by:</b> @{esc(user.username or user.first_name)}\n"
+            f"<code>{datetime.now().strftime('%d %b %Y %H:%M:%S')}</code>"
         )
         pending_pays.pop(pid, None)
         await del_pending(pid)

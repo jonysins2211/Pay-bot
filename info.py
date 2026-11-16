@@ -39,14 +39,14 @@ BOTS = {
         "name": "🎬 Cinephiles + MawaMovies",
         "username": "@CinephilesRobot",
         "description": (
-            "🎬 *Cinephiles + MawaMovies Bot — COMBO VIP*\n\n"
-            "*GET THE BEST OF BOTH WORLDS!* 🍿🔥\n\n"
-            "✨ *PREMIUM BENEFITS:*\n"
-            "💎 *CINEPHILES: HD & LATEST TOLLYWOOD + HOLLYWOOD*\n"
-            "💎 *MAWA MOVIES: EXCLUSIVE ALL REGIONAL CONTENT*\n"
-            "💎 *ZERO ADS & LIGHTNING FAST ACCESS*\n"
-            "💎 *EARLY DROPS & NEW RELEASES*\n\n"
-            "👇 *SELECT YOUR PREMIUM PLAN BELOW:*"
+            "<b>🎬 Cinephiles + MawaMovies Bot — COMBO VIP</b>\n\n"
+            "<b>🍿🔥 GET THE BEST OF BOTH WORLDS!</b>\n\n"
+            "<b>✨ PREMIUM BENEFITS:</b>\n"
+            "<blockquote><b>💎 CINEPHILES: HD &amp; LATEST TOLLYWOOD + HOLLYWOOD\n"
+            "💎 MAWA MOVIES: EXCLUSIVE ALL REGIONAL CONTENT\n"
+            "💎 ZERO ADS &amp; LIGHTNING FAST ACCESS\n"
+            "💎 EARLY DROPS &amp; NEW RELEASES</b></blockquote>\n\n"
+            "<b>👇 SELECT YOUR PREMIUM PLAN BELOW:</b>"
         ),
         "plans": {
             "1m":  {"label": "1 Month",  "price": 25,  "days": 30},
@@ -60,14 +60,14 @@ BOTS = {
         "name": "🎞️ ML_Files 3.0 (DVD + HD)",
         "username": "@ML_FILES_ROBOT",
         "description": (
-            "🎞️ *ML_Files 3.0 — DVD + HD VIP SUBSCRIPTION*\n\n"
-            "*CRYSTAL CLEAR QUALITY. EVERY TIME.* 📀\n\n"
-            "✨ *PREMIUM BENEFITS:*\n"
-            "💎 *DVD & HD QUALITY FILES*\n"
-            "💎 *MASSIVE LIBRARY — ALL GENRES*\n"
-            "💎 *SUPER FAST DOWNLOADS*\n"
-            "💎 *EXCLUSIVE CONTENT DROPS*\n\n"
-            "👇 *SELECT YOUR PREMIUM PLAN BELOW:*"
+            "<b>🎞️ ML_Files 3.0 — DVD + HD VIP SUBSCRIPTION</b>\n\n"
+            "<b>📀 CRYSTAL CLEAR QUALITY. EVERY TIME.</b>\n\n"
+            "<b>✨ PREMIUM BENEFITS:</b>\n"
+            "<blockquote><b>💎 DVD &amp; HD QUALITY FILES\n"
+            "💎 MASSIVE LIBRARY — ALL GENRES\n"
+            "💎 SUPER FAST DOWNLOADS\n"
+            "💎 EXCLUSIVE CONTENT DROPS</b></blockquote>\n\n"
+            "<b>👇 SELECT YOUR PREMIUM PLAN BELOW:</b>"
         ),
         "plans": {
             "1m":  {"label": "1 Month",  "price": 25,  "days": 30},
@@ -81,14 +81,14 @@ BOTS = {
         "name": "🔗 File to Link Bot",
         "username": "@Mlfiletolinkbot",
         "description": (
-            "🔗 *File to Link Bot — VIP SUBSCRIPTION*\n\n"
-            "*UPLOAD ANY FILE. GET A DIRECT LINK INSTANTLY!* ⚡\n\n"
-            "✨ *PREMIUM BENEFITS:*\n"
-            "💎 *UNLIMITED FILE UPLOADS*\n"
-            "💎 *NO SIZE LIMIT*\n"
-            "💎 *PERMANENT SHAREABLE LINKS*\n"
-            "💎 *BLAZING FAST SERVERS*\n\n"
-            "👇 *SELECT YOUR PREMIUM PLAN BELOW:*"
+            "<b>🔗 File to Link Bot — VIP SUBSCRIPTION</b>\n\n"
+            "<b>⚡ UPLOAD ANY FILE. GET A DIRECT LINK INSTANTLY!</b>\n\n"
+            "<b>✨ PREMIUM BENEFITS:</b>\n"
+            "<blockquote><b>💎 UNLIMITED FILE UPLOADS\n"
+            "💎 NO SIZE LIMIT\n"
+            "💎 PERMANENT SHAREABLE LINKS\n"
+            "💎 BLAZING FAST SERVERS</b></blockquote>\n\n"
+            "<b>👇 SELECT YOUR PREMIUM PLAN BELOW:</b>"
         ),
         "plans": {
             "1m":  {"label": "1 Month",  "price": 25,  "days": 30},
@@ -102,14 +102,14 @@ BOTS = {
         "name": "🔗 File 2 Link Bot 2.0",
         "username": "@ML_File2Link_Bot",
         "description": (
-            "🔗 *File 2 Link Bot 2.0 — VIP SUBSCRIPTION*\n\n"
-            "*THE UPGRADED LINK GENERATOR IS HERE!* 🚀\n\n"
-            "✨ *PREMIUM BENEFITS:*\n"
-            "💎 *FASTER THAN EVER — 2.0 ENGINE*\n"
-            "💎 *BULK FILE SUPPORT*\n"
-            "💎 *CUSTOM LINK MANAGEMENT*\n"
-            "💎 *PRIORITY ACCESS & UPTIME*\n\n"
-            "👇 *SELECT YOUR PREMIUM PLAN BELOW:*"
+            "<b>🔗 File 2 Link Bot 2.0 — VIP SUBSCRIPTION</b>\n\n"
+            "<b>🚀 THE UPGRADED LINK GENERATOR IS HERE!</b>\n\n"
+            "<b>✨ PREMIUM BENEFITS:</b>\n"
+            "<blockquote><b>💎 FASTER THAN EVER — 2.0 ENGINE\n"
+            "💎 BULK FILE SUPPORT\n"
+            "💎 CUSTOM LINK MANAGEMENT\n"
+            "💎 PRIORITY ACCESS &amp; UPTIME</b></blockquote>\n\n"
+            "<b>👇 SELECT YOUR PREMIUM PLAN BELOW:</b>"
         ),
         "plans": {
             "1m":  {"label": "1 Month",  "price": 25,  "days": 30},
@@ -123,16 +123,16 @@ BOTS = {
         "name": "👑 All Bots Premium (Combo)",
         "username": "AllBotsCombo",
         "description": (
-            "👑 *ALL BOTS PREMIUM — ULTIMATE COMBO PLAN*\n\n"
-            "*GET ACCESS TO EVERY SINGLE BOT IN ONE PLAN!* 🌟\n\n"
-            "✅ *INCLUDES ALL OF THESE:*\n"
-            "🎬 Cinephiles + Mawa Movies Bot\n"
+            "<b>👑 ALL BOTS PREMIUM — ULTIMATE COMBO PLAN</b>\n\n"
+            "<b>🌟 GET ACCESS TO EVERY SINGLE BOT IN ONE PLAN!</b>\n\n"
+            "<b>✅ INCLUDES ALL OF THESE:</b>\n"
+            "<blockquote><b>🎬 Cinephiles + Mawa Movies Bot\n"
             "🎞️ ML_Files 3.0 (DVD + HD)\n"
             "🔗 File to Link Bot\n"
-            "🔗 File 2 Link Bot 2.0\n\n"
-            "💎 *BEST VALUE — SAVE MORE WITH LONGER PLANS!*\n"
-            "💎 *ONE PAYMENT — ALL ACCESS*\n\n"
-            "👇 *SELECT YOUR PREMIUM PLAN BELOW:*"
+            "🔗 File 2 Link Bot 2.0</b></blockquote>\n\n"
+            "<blockquote><b>💎 BEST VALUE — SAVE MORE WITH LONGER PLANS!\n"
+            "💎 ONE PAYMENT — ALL ACCESS</b></blockquote>\n\n"
+            "<b>👇 SELECT YOUR PREMIUM PLAN BELOW:</b>"
         ),
         "plans": {
             "1m":  {"label": "1 Month",  "price": 80,   "days": 30},

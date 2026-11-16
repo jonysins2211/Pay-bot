@@ -1,5 +1,6 @@
 import logging
 from pyrogram import Client
+from pyrogram.enums import ParseMode
 from info import SESSION, API_ID, API_HASH, BOT_TOKEN
 
 logging.basicConfig(
@@ -17,6 +18,10 @@ class PaymentBot(Client):
             workers=15,
             plugins={"root": "plugins"},  # auto-loads all plugins/*.py handlers
             sleep_threshold=60,
+            # Rich look: every message is HTML (<b>, <blockquote>, ...) so the
+            # bot's texts render bold with quote blocks. All message strings
+            # in the repo are HTML now; user input is escaped via utils.esc.
+            parse_mode=ParseMode.HTML,
         )
 
     async def start(self):

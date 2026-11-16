@@ -54,7 +54,7 @@ async def start():
     try:
         await PayBot.send_message(
             LOGS_CHANNEL,
-            f"🤖 **Bot Started!**\n@{me.username} is now online ✅"
+            f"<b>🤖 Bot Started!</b>\n<b>@{me.username} is now online ✅</b>"
         )
     except Exception:
         pass

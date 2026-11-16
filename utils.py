@@ -1,3 +1,4 @@
+import html
 import os
 import asyncio
 import logging
@@ -21,11 +22,21 @@ expiry_tasks: dict = {}
 pending_pays: dict = {}   # mirrors DB for quick access
 
 
+def esc(value) -> str:
+    """Escape user-provided text for the bot's HTML parse mode."""
+    return html.escape(str(value), quote=False)
+
+
 def ban_message(reason: str) -> str:
     return (
-        "🚫 **You are banned.**\n\n"
-        f"Reason: {reason}"
+        "<b>🚫 You are banned.</b>\n\n"
+        f"<blockquote><b>Reason: {esc(reason)}</b></blockquote>"
     )
+
+
+def ban_alert(reason: str) -> str:
+    """Plain-text version for the callback alert (alerts render no HTML)."""
+    return f"🚫 You are banned.\n\nReason: {reason}"
 
 
 async def is_banned(user_id: int) -> dict | None:
@@ -45,7 +56,7 @@ async def answer_if_banned(query) -> bool:
     if not ban:
         return False
     text = ban_message(ban.get("reason", "No reason provided."))
-    await query.answer(text.replace("**", ""), show_alert=True)
+    await query.answer(ban_alert(ban.get("reason", "No reason provided.")), show_alert=True)
     try:
         await query.message.reply_text(text)
     except Exception:
@@ -154,21 +165,21 @@ async def qr_expiry_timer(client, user_id: int, pid: str,
     try:
         await client.send_message(
             chat_id,
-            "⏳ **PAYMENT TIME EXPIRED!**\n\n"
-            "*YOUR 5-MINUTE PAYMENT WINDOW HAS BEEN\n"
+            "<b>⏳ PAYMENT TIME EXPIRED!</b>\n\n"
+            "<blockquote><b>YOUR 5-MINUTE PAYMENT WINDOW HAS BEEN\n"
             "CLOSED. IF YOU WANT TO TRY AGAIN, CLICK\n"
-            "RESTART BELOW.*",
+            "RESTART BELOW.</b></blockquote>",
             reply_markup=expired_kb(bot_key, plan_key),
         )
     except Exception as e:
         logger.error(f"Expiry msg error: {e}")
 
     await log(client,
-        f"⏰ **QR EXPIRED**\n\n"
-        f"🆔 User ID: `{user_id}`\n"
-        f"🤖 Bot: **{bot.get('name', '?')}**\n"
-        f"📅 Plan: **{plan.get('label', '?')}** | ₹{plan.get('price', '?')}\n"
-        f"🕐 `{datetime.now().strftime('%d %b %Y %H:%M:%S')}`"
+        f"<b>⏰ QR EXPIRED</b>\n\n"
+        f"<b>🆔 User ID:</b> <code>{user_id}</code>\n"
+        f"<b>🤖 Bot:</b> {esc(bot.get('name', '?'))}\n"
+        f"<b>📅 Plan:</b> {esc(plan.get('label', '?'))} | ₹{esc(plan.get('price', '?'))}\n"
+        f"<code>{datetime.now().strftime('%d %b %Y %H:%M:%S')}</code>"
     )
 
 
@@ -196,10 +207,10 @@ async def subscription_expiry_checker(client):
                     try:
                         await client.send_message(
                             user_id,
-                            f"⚠️ **SUBSCRIPTION EXPIRING TOMORROW!**\n\n"
-                            f"🤖 Bot: **{bot_uname}**\n"
-                            f"📆 Expires: **{sub.get('expiry', expiry_str)}**\n\n"
-                            f"🔄 *Renew now to avoid losing access!*",
+                            f"<b>⚠️ SUBSCRIPTION EXPIRING TOMORROW!</b>\n\n"
+                            f"<blockquote><b>🤖 Bot: {esc(bot_uname)}\n"
+                            f"📆 Expires: {esc(sub.get('expiry', expiry_str))}</b></blockquote>\n\n"
+                            f"<b>🔄 Renew now to avoid losing access!</b>",
                             reply_markup=renew_kb(bot_key),
                         )
                     except Exception as e:
@@ -210,10 +221,10 @@ async def subscription_expiry_checker(client):
                     try:
                         await client.send_message(
                             user_id,
-                            f"❌ **SUBSCRIPTION EXPIRED!**\n\n"
-                            f"🤖 Bot: **{bot_uname}**\n"
-                            f"📆 Expired: **{sub.get('expiry', expiry_str)}**\n\n"
-                            f"🔄 *Tap below to renew!*",
+                            f"<b>❌ SUBSCRIPTION EXPIRED!</b>\n\n"
+                            f"<blockquote><b>🤖 Bot: {esc(bot_uname)}\n"
+                            f"📆 Expired: {esc(sub.get('expiry', expiry_str))}</b></blockquote>\n\n"
+                            f"<b>🔄 Tap below to renew!</b>",
                             reply_markup=renew_kb(bot_key),
                         )
                     except Exception as e:

@@ -5,7 +5,7 @@ from pyrogram.types import Message
 
 from info import BOTS, ADMIN_GROUP, OWNER_USERNAME
 from keyboards import home_kb, admin_kb
-from utils import user_state, pending_pays, cancel_expiry_by_pid, log, reply_if_banned
+from utils import user_state, pending_pays, cancel_expiry_by_pid, log, reply_if_banned, esc
 
 logger = logging.getLogger(__name__)
 
@@ -21,13 +21,13 @@ async def screenshot_handler(client: Client, message: Message):
     state = user_state.get(user.id, {})
 
     if not state.get("awaiting_screenshot"):
-        await message.reply_text("Please use /start to begin a subscription.")
+        await message.reply_text("<b>Please use /start to begin a subscription.</b>")
         return
 
     pid     = state.get("pending_id")
     payment = pending_pays.get(pid) if pid else None
     if not pid or not payment:
-        await message.reply_text("⚠️ Session expired. Please /start again.")
+        await message.reply_text("<b>⚠️ Session expired. Please /start again.</b>")
         return
 
     cancel_expiry_by_pid(pid)
@@ -39,19 +39,19 @@ async def screenshot_handler(client: Client, message: Message):
     uname    = f"@{user.username}" if user.username else "No username"
 
     admin_caption = (
-        f"📸 **PAYMENT SCREENSHOT**\n\n"
-        f"👤 **User:** [{user.first_name}](tg://user?id={user.id})\n"
-        f"🔗 **Username:** {uname}\n"
-        f"🆔 **User ID:** `{user.id}`\n"
-        f"🤖 **Bot:** {bot['name']} (`{bot['username']}`)\n"
-        f"📅 **Plan:** {plan['label']}\n"
-        f"💰 **Amount:** ₹{plan['price']}\n"
-        f"🕐 `{datetime.now().strftime('%d %b %Y %H:%M:%S')}`\n"
-        f"🔑 ID: `{pid}`"
+        f"<b>📸 PAYMENT SCREENSHOT</b>\n\n"
+        f"<b>👤 User:</b> <a href=\"tg://user?id={user.id}\">{esc(user.first_name)}</a>\n"
+        f"<b>🔗 Username:</b> {esc(uname)}\n"
+        f"<b>🆔 User ID:</b> <code>{user.id}</code>\n"
+        f"<b>🤖 Bot:</b> {esc(bot['name'])} (<code>{esc(bot['username'])}</code>)\n"
+        f"<b>📅 Plan:</b> {esc(plan['label'])}\n"
+        f"<b>💰 Amount:</b> ₹{plan['price']}\n"
+        f"<code>{datetime.now().strftime('%d %b %Y %H:%M:%S')}</code>\n"
+        f"<b>🔑 ID:</b> <code>{esc(pid)}</code>"
     )
 
     if not ADMIN_GROUP:
-        await message.reply_text("❌ Admin group not configured. Contact owner.")
+        await message.reply_text("<b>❌ Admin group not configured. Contact owner.</b>")
         return
 
     try:
@@ -71,27 +71,27 @@ async def screenshot_handler(client: Client, message: Message):
             )
     except Exception as e:
         logger.error(f"Forward to admin: {e}")
-        await message.reply_text("❌ Error sending to admin. Try again.")
+        await message.reply_text("<b>❌ Error sending to admin. Try again.</b>")
         return
 
     user_state.pop(user.id, None)
     await message.reply_text(
-        "✅ **SCREENSHOT RECEIVED!**\n\n"
-        "⏳ *Your payment is under review.*\n"
-        "You'll be notified once approved.\n\n"
-        "⚡ *Approvals usually take just a few minutes!*",
+        "<b>✅ SCREENSHOT RECEIVED!</b>\n\n"
+        "<blockquote><b>⏳ Your payment is under review.\n"
+        "You'll be notified once approved.</b></blockquote>\n\n"
+        "<b>⚡ Approvals usually take just a few minutes!</b>",
     )
 
     await log(client,
-        f"📸 **SCREENSHOT RECEIVED**\n\n"
-        f"👤 **User:** [{user.first_name}](tg://user?id={user.id})\n"
-        f"🔗 **Username:** {uname}\n"
-        f"🆔 **User ID:** `{user.id}`\n"
-        f"🤖 **Bot:** {bot['name']} (`{bot['username']}`)\n"
-        f"📅 **Plan:** {plan['label']}\n"
-        f"💰 **Amount:** ₹{plan['price']}\n"
-        f"🕐 `{datetime.now().strftime('%d %b %Y %H:%M:%S')}`\n"
-        f"⏳ **Awaiting Admin Approval**"
+        f"<b>📸 SCREENSHOT RECEIVED</b>\n\n"
+        f"<b>👤 User:</b> <a href=\"tg://user?id={user.id}\">{esc(user.first_name)}</a>\n"
+        f"<b>🔗 Username:</b> {esc(uname)}\n"
+        f"<b>🆔 User ID:</b> <code>{user.id}</code>\n"
+        f"<b>🤖 Bot:</b> {esc(bot['name'])} (<code>{esc(bot['username'])}</code>)\n"
+        f"<b>📅 Plan:</b> {esc(plan['label'])}\n"
+        f"<b>💰 Amount:</b> ₹{plan['price']}\n"
+        f"<code>{datetime.now().strftime('%d %b %Y %H:%M:%S')}</code>\n"
+        f"<b>⏳ Awaiting Admin Approval</b>"
     )
 
 
@@ -107,17 +107,18 @@ async def text_handler(client: Client, message: Message):
         try:
             await client.send_message(
                 ADMIN_GROUP,
-                f"⚠️ **USER REPORT**\n\n"
-                f"👤 [{user.first_name}](tg://user?id={user.id}) (`@{user.username or 'N/A'}`)\n"
-                f"🆔 `{user.id}`\n\n"
-                f"📝 {message.text}"
+                f"<b>⚠️ USER REPORT</b>\n\n"
+                f"<b>👤</b> <a href=\"tg://user?id={user.id}\">{esc(user.first_name)}</a> (<code>@{esc(user.username or 'N/A')}</code>)\n"
+                f"<b>🆔</b> <code>{user.id}</code>\n\n"
+                f"<blockquote><b>{esc(message.text)}</b></blockquote>"
             )
             await message.reply_text(
-                f"✅ *Report sent to admin.*\nThey'll contact you via {OWNER_USERNAME}",
+                f"<b>✅ Report sent to admin.</b>\n"
+                f"<b>They'll contact you via {esc(OWNER_USERNAME)}</b>",
                 reply_markup=home_kb(),
             )
         except Exception:
-            await message.reply_text("❌ Error. Try again later.")
+            await message.reply_text("<b>❌ Error. Try again later.</b>")
         user_state.pop(user.id, None)
     else:
-        await message.reply_text("👋 Use /start to navigate the bot.", reply_markup=home_kb())
+        await message.reply_text("<b>👋 Use /start to navigate the bot.</b>", reply_markup=home_kb())

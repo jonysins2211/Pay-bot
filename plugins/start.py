@@ -4,7 +4,7 @@ from pyrogram.types import Message
 
 from info import BANNER_IMAGE
 from keyboards import main_menu_kb, home_kb
-from utils import user_state, clear_user_pending, reply_if_banned
+from utils import user_state, clear_user_pending, reply_if_banned, esc
 
 logger = logging.getLogger(__name__)
 
@@ -19,15 +19,15 @@ async def start_cmd(client: Client, message: Message):
     user_state.pop(user.id, None)
 
     welcome = (
-        f"👋 **Hello {user.first_name}!**\n\n"
-            f"🚀 **Welcome to ML Payment Bot!**\n"
-            f"💳 *Fast • Secure • Reliable Payments*\n\n"
-            f"✨ **What you can do:**\n"
-            f"• Access Premium Bots\n"
-            f"• Premium Files to Link bots\n"
-            f"• Get Combo Deals\n"
-            f"• Instant Support\n\n"
-            f"👇 **Use the buttons below to continue**"
+        f"<b>👋 Hello {esc(user.first_name)}!</b>\n\n"
+        f"<b>🚀 Welcome to ML Payment Bot!</b>\n"
+        f"<b>💳 Fast • Secure • Reliable Payments</b>\n\n"
+        f"<b>✨ What you can do:</b>\n"
+        f"<blockquote><b>• Access Premium Bots\n"
+        f"• Premium Files to Link bots\n"
+        f"• Get Combo Deals\n"
+        f"• Instant Support</b></blockquote>\n\n"
+        f"<b>👇 Use the buttons below to continue</b>"
     )
 
     if BANNER_IMAGE:
@@ -49,6 +49,7 @@ async def cancel_cmd(client: Client, message: Message):
     await clear_user_pending(user.id, client)
     user_state.pop(user.id, None)
     await message.reply_text(
-        "❌ *Process cancelled.*\nUse /start to begin again.",
+        "<b>❌ Process cancelled.</b>\n"
+        "<b>Use /start to begin again.</b>",
         reply_markup=home_kb(),
     )

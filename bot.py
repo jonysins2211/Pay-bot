@@ -28,6 +28,9 @@ async def health_check(request):
 # Looks the pending payment up in MongoDB, then shows the amount and a
 # Pay button that opens the UPI app (same upi:// link the QR encodes).
 # The pid expires with the QR (5 min); after that the link shows expired.
+# The page is opened as a Telegram Mini App (WebApp button) — the
+# telegram-web-app.js script expands it full-height inside Telegram.
+# It still works as a plain web page (the script is guarded).
 PAY_PAGE = """<!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -54,7 +57,17 @@ img{{width:200px;height:200px;background:#fff;border-radius:12px;padding:8px;mar
 After paying, send the payment screenshot to the bot.</p>
 <img src="data:image/png;base64,{qr_b64}" alt="Scan to pay">
 <p class="hint">Or scan the QR with any UPI app.</p>
-</div></body></html>"""
+</div>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+if (window.Telegram && Telegram.WebApp) {{
+  Telegram.WebApp.ready();
+  Telegram.WebApp.expand();
+  Telegram.WebApp.setHeaderColor('#0f172a');
+  Telegram.WebApp.setBackgroundColor('#0f172a');
+}}
+</script>
+</body></html>"""
 
 EXPIRED_PAGE = """<!doctype html>
 <html><head><meta charset="utf-8">

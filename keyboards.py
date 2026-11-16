@@ -1,4 +1,4 @@
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from info import BOTS, OWNER_USERNAME, UPDATES_CHANNEL, SUPPORT_GROUP
 
 
@@ -39,14 +39,14 @@ def plan_kb(bot_key: str) -> InlineKeyboardMarkup:
 
 
 def pay_kb(pay_url: str) -> InlineKeyboardMarkup:
-    """Pay Now button: opens the bot's payment page (https).
+    """Pay Now button: opens the bot's payment page as a Telegram Mini App.
 
-    Telegram only allows http(s)/tg:// URLs in buttons, so the button must
-    open the /pay page — the page itself has the button that opens the UPI
-    app (upi:// works from a web page, not from a Telegram button).
+    A WebApp button opens the page inside Telegram (not in Chrome), so the
+    user never leaves the chat. The page itself has the button that opens
+    the UPI app (upi:// works from a web page, not from a Telegram button).
     """
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("💳 Pay Now", url=pay_url)
+        InlineKeyboardButton("💳 Pay Now", web_app=WebAppInfo(url=pay_url))
     ]])
 
 

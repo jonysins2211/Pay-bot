@@ -38,17 +38,23 @@ def plan_kb(bot_key: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def pay_kb(pay_url: str) -> InlineKeyboardMarkup:
+def pay_kb(pay_url: str, pid: str = "") -> InlineKeyboardMarkup:
     """Pay Now button: opens the bot's payment page in the browser.
 
     The Mini App (WebApp button) version did not work — the UPI button
     inside the Mini App WebView would not open the UPI app — so the
     button is a plain https link again, which opens the page in the
     user's browser (Chrome), where the upi:// link opens the UPI app.
+
+    A second button, Resend Link, gives the user a fresh 5-minute
+    payment link (new pid) without starting over.
     """
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("💳 Pay Now", url=pay_url)
-    ]])
+    rows = [[InlineKeyboardButton("💳 Pay Now", url=pay_url)]]
+    if pid:
+        rows.append([InlineKeyboardButton(
+            "🔄 Resend Link", callback_data=f"resend:{pid}"
+        )])
+    return InlineKeyboardMarkup(rows)
 
 
 def home_kb() -> InlineKeyboardMarkup:
@@ -58,9 +64,16 @@ def home_kb() -> InlineKeyboardMarkup:
 
 
 def expired_kb(bot_key: str, plan_key: str) -> InlineKeyboardMarkup:
+    """Shown when the 5-minute payment window closes.
+
+    GET NEW LINK starts a fresh payment for the same plan in one tap
+    (no plan list in between) — the old RESTART button only opened
+    the plan list.
+    """
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("🏠 MAIN MENU", callback_data="home"),
-        InlineKeyboardButton("🔄 RESTART",   callback_data=f"restart:{bot_key}:{plan_key}"),
+        InlineKeyboardButton("🔄 GET NEW LINK",
+                             callback_data=f"plan:{bot_key}:{plan_key}"),
     ]])
 
 
@@ -81,11 +94,34 @@ def admin_kb(pending_id: str) -> InlineKeyboardMarkup:
     ]])
 
 
-def renew_kb(bot_key: str) -> InlineKeyboardMarkup:
+def renew_plan_kb(bot_key: str, plan_key: str) -> InlineKeyboardMarkup:
+    """Renew the same plan in one tap (used by expiry reminders and /myplan).
+
+    The button goes straight to the payment flow for this exact plan
+    (callback plan:<bot>:<plan>) — no plan list in between.
+    """
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
             f"🔄 RENEW {BOTS[bot_key]['name']}",
-            callback_data=f"bot:{bot_key}"
+            callback_data=f"plan:{bot_key}:{plan_key}"
         )],
         [InlineKeyboardButton("🏠 MAIN MENU", callback_data="home")],
     ])
+
+
+def myplan_kb(subs: list) -> InlineKeyboardMarkup:
+    """Renew button per active subscription (used by /myplan)."""
+    rows = []
+    for sub in subs:
+        bot_key  = sub.get("bot_key", "")
+        plan_key = sub.get("plan_key", "")
+        bot  = BOTS.get(bot_key, {})
+        plan = bot.get("plans", {}).get(plan_key, {})
+        if not bot or not plan:
+            continue
+        rows.append([InlineKeyboardButton(
+            f"🔄 Renew {bot.get('username', bot_key)} — {plan.get('label', '')}",
+            callback_data=f"plan:{bot_key}:{plan_key}"
+        )])
+    rows.append([InlineKeyboardButton("🏠 HOME", callback_data="home")])
+    return InlineKeyboardMarkup(rows)

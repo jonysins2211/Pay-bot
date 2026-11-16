@@ -10,7 +10,7 @@ from utils import user_state, pending_pays, cancel_expiry_by_pid, log, reply_if_
 
 logger = logging.getLogger(__name__)
 
-COMMANDS = ["start", "myplan", "myhistory", "report", "owner_cmd", "pending", "cancel", "broadcast", "ban", "unban", "bans"]
+COMMANDS = ["start", "myplan", "myhistory", "mypayments", "stats", "report", "owner_cmd", "pending", "cancel", "broadcast", "ban", "unban", "bans"]
 
 # ── "Use /start" fallback spam guard ──────────────────────────
 # After a redeploy the bot can receive the same update again

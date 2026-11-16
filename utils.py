@@ -168,7 +168,33 @@ async def clear_user_pending(user_id: int, client=None):
 async def qr_expiry_timer(client, user_id: int, pid: str,
                            bot_key: str, plan_key: str, chat_id: int):
     from keyboards import expired_kb
-    await asyncio.sleep(QR_EXPIRY_SECONDS)
+
+    # Reminder 2 minutes before the window closes, so a user who is
+    # still paying gets one nudge to send the screenshot in time.
+    # The timer is cancelled as soon as the screenshot arrives (or the
+    # user cancels), so the reminder only fires while still waiting.
+    reminder_at = max(60, QR_EXPIRY_SECONDS - 120)
+    await asyncio.sleep(reminder_at)
+
+    payment = await get_pending(pid)
+    state = user_state.get(user_id, {})
+    if payment and state.get("awaiting_screenshot") and state.get("pending_id") == pid:
+        bot  = BOTS.get(bot_key, {})
+        plan = bot.get("plans", {}).get(plan_key, {})
+        try:
+            await client.send_message(
+                chat_id,
+                f"<b>⏰ PAYMENT REMINDER</b>\n\n"
+                f"<blockquote><b>🤖 Bot: {esc(bot.get('name', '?'))}\n"
+                f"📅 Plan: {esc(plan.get('label', '?'))} — ₹{esc(plan.get('price', '?'))}\n"
+                f"⏳ Your payment link expires in 2 minutes!</b></blockquote>\n\n"
+                f"<b>📸 Paid already? Send the screenshot now.</b>\n"
+                f"<b>🔄 Need a fresh link? Tap Resend Link on the payment message.</b>",
+            )
+        except Exception as e:
+            logger.warning(f"Payment reminder {user_id}: {e}")
+
+    await asyncio.sleep(QR_EXPIRY_SECONDS - reminder_at)
 
     payment = await get_pending(pid)
     if not payment:
@@ -218,26 +244,60 @@ async def qr_expiry_timer(client, user_id: int, pid: str,
 
 
 async def subscription_expiry_checker(client):
-    while True:
-        await asyncio.sleep(86400)
-        from keyboards import renew_kb
+    """Check subscription expiries once a day, starting right away.
+
+    Reminders (each sent once per subscription, tracked in the sub's
+    reminders_sent list so a restart never re-sends one):
+      • 3 days left — "expiring in 3 days" + Renew button
+      • 1 day left  — "expiring tomorrow" + Renew button
+      • 0 days left — "expired" + Renew button, subscription removed
+    A sub already past its date (e.g. the bot was down) counts as
+    expired too. The Renew button goes straight to the payment flow
+    for the same plan — no plan list in between.
+    """
+    from keyboards import renew_plan_kb
+
+    async def _check_once():
         now = datetime.now().date()
         all_subs = await get_all_subs()
 
         for user_id, subs in list(all_subs.items()):
             still_active = []
+            changed = False
             for sub in subs:
                 expiry_str = sub.get("expiry_raw")
                 if not expiry_str:
                     still_active.append(sub)
                     continue
 
-                expiry_date = datetime.strptime(expiry_str, "%Y-%m-%d").date()
+                try:
+                    expiry_date = datetime.strptime(expiry_str, "%Y-%m-%d").date()
+                except Exception:
+                    still_active.append(sub)
+                    continue
                 bot_key   = sub.get("bot_key", "")
+                plan_key  = sub.get("plan_key", "")
                 bot_uname = BOTS.get(bot_key, {}).get("username", "")
                 days_left = (expiry_date - now).days
+                sent = sub.get("reminders_sent", []) or []
 
-                if days_left == 1:
+                if days_left == 3 and 3 not in sent:
+                    try:
+                        await client.send_message(
+                            user_id,
+                            f"<b>⏰ SUBSCRIPTION EXPIRING IN 3 DAYS!</b>\n\n"
+                            f"<blockquote><b>🤖 Bot: {esc(bot_uname)}\n"
+                            f"📆 Expires: {esc(sub.get('expiry', expiry_str))}</b></blockquote>\n\n"
+                            f"<b>🔄 Renew now to keep your premium access!</b>",
+                            reply_markup=renew_plan_kb(bot_key, plan_key),
+                        )
+                    except Exception as e:
+                        logger.warning(f"3-day notify {user_id}: {e}")
+                    sub["reminders_sent"] = sent + [3]
+                    changed = True
+                    still_active.append(sub)
+
+                elif days_left == 1 and 1 not in sent:
                     try:
                         await client.send_message(
                             user_id,
@@ -245,13 +305,15 @@ async def subscription_expiry_checker(client):
                             f"<blockquote><b>🤖 Bot: {esc(bot_uname)}\n"
                             f"📆 Expires: {esc(sub.get('expiry', expiry_str))}</b></blockquote>\n\n"
                             f"<b>🔄 Renew now to avoid losing access!</b>",
-                            reply_markup=renew_kb(bot_key),
+                            reply_markup=renew_plan_kb(bot_key, plan_key),
                         )
                     except Exception as e:
                         logger.warning(f"1-day notify {user_id}: {e}")
+                    sub["reminders_sent"] = sent + [1]
+                    changed = True
                     still_active.append(sub)
 
-                elif days_left == 0:
+                elif days_left <= 0:
                     try:
                         await client.send_message(
                             user_id,
@@ -259,15 +321,21 @@ async def subscription_expiry_checker(client):
                             f"<blockquote><b>🤖 Bot: {esc(bot_uname)}\n"
                             f"📆 Expired: {esc(sub.get('expiry', expiry_str))}</b></blockquote>\n\n"
                             f"<b>🔄 Tap below to renew!</b>",
-                            reply_markup=renew_kb(bot_key),
+                            reply_markup=renew_plan_kb(bot_key, plan_key),
                         )
                     except Exception as e:
                         logger.warning(f"Expiry notify {user_id}: {e}")
+                    changed = True  # sub dropped from still_active
 
-                elif days_left > 1:
+                else:
                     still_active.append(sub)
 
-            await set_subs(user_id, still_active)
+            if changed:
+                await set_subs(user_id, still_active)
+
+    while True:
+        await _check_once()
+        await asyncio.sleep(86400)
 
 
 async def ping_server():

@@ -10,7 +10,7 @@ from pyrogram.types import CallbackQuery
 from info import BOTS, ADMIN_IDS, LOGS_CHANNEL, SUPPORT_GROUP, OWNER_USERNAME, UPDATES_CHANNEL, QR_EXPIRY_SECONDS
 from keyboards import (
     main_menu_kb, plan_kb, home_kb, expired_kb,
-    help_kb, admin_kb, renew_kb, pay_kb, telegram_url
+    help_kb, admin_kb, pay_kb, telegram_url
 )
 from utils import (
     user_state, pending_pays, expiry_tasks,
@@ -32,6 +32,19 @@ PAY_BANNER_B64 = os.path.join(
     "assets", "pay_banner.b64"
 )
 _BANNER_CACHE = None
+
+
+def payment_caption(amount: int, label: str, link: str) -> str:
+    """Caption for the payment message (used by plan select and resend)."""
+    return (
+        f"<b>🧾 PAYMENT DETAILS:</b>\n\n"
+        f"<blockquote><b>• PAY ₹{amount} — PREMIUM TIME: {esc(label)}\n"
+        f"• PAYMENT LINK VALID FOR 5 MINUTES</b></blockquote>\n\n"
+        f"<b>💳 TAP “PAY NOW” BELOW TO OPEN THE PAYMENT PAGE</b>\n"
+        f"<b>🔗 Payment Link:</b> <a href=\"{link}\">{link}</a>\n\n"
+        f"<b>⚠️ AFTER PAYMENT:</b>\n"
+        f"<b>📸 SEND THE PAYMENT SCREENSHOT HERE</b>"
+    )
 
 
 def pay_banner_photo():
@@ -138,24 +151,17 @@ async def callbacks(client: Client, query: CallbackQuery):
         # The Pay Now button opens the payment page in the browser
         # (Chrome) — the Mini App version did not work because the UPI
         # button inside the Mini App WebView would not open the UPI app.
+        # The Resend Link button gives a fresh 5-minute link in place.
         link = payment_link(pid)
-        caption = (
-            f"<b>🧾 PAYMENT DETAILS:</b>\n\n"
-            f"<blockquote><b>• PAY ₹{amount} — PREMIUM TIME: {esc(label)}\n"
-            f"• PAYMENT LINK VALID FOR 5 MINUTES</b></blockquote>\n\n"
-            f"<b>💳 TAP “PAY NOW” BELOW TO OPEN THE PAYMENT PAGE</b>\n"
-            f"<b>🔗 Payment Link:</b> <a href=\"{link}\">{link}</a>\n\n"
-            f"<b>⚠️ AFTER PAYMENT:</b>\n"
-            f"<b>📸 SEND THE PAYMENT SCREENSHOT HERE</b>"
-        )
+        caption = payment_caption(amount, label, link)
         banner = pay_banner_photo()
         if banner is not None:
             pay_msg = await query.message.reply_photo(
-                photo=banner, caption=caption, reply_markup=pay_kb(link),
+                photo=banner, caption=caption, reply_markup=pay_kb(link, pid),
             )
         else:
             # Banner missing (e.g. fresh checkout without the asset) — text only.
-            pay_msg = await query.message.reply_text(caption, reply_markup=pay_kb(link))
+            pay_msg = await query.message.reply_text(caption, reply_markup=pay_kb(link, pid))
         proof_msg = await query.message.reply_text(
             "<b>📸 SEND A SCREENSHOT OF THE PAYMENT FOR VERIFICATION.</b>\n\n"
             "<b>Use /cancel to cancel the process.</b>"
@@ -182,18 +188,66 @@ async def callbacks(client: Client, query: CallbackQuery):
         )
         expiry_tasks[pid] = task
 
-    # ── RESTART ───────────────────────────────────────────────
-    elif data.startswith("restart:"):
-        _, bot_key, plan_key = data.split(":")
-        bot = BOTS.get(bot_key)
-        if not bot:
-            await query.answer()
+    # ── RESEND PAYMENT LINK ───────────────────────────────────
+    # Fresh 5-minute link for the same payment, in place — the user
+    # does not have to start over. Only while still awaiting the
+    # screenshot; once the screenshot is sent the payment is under
+    # review and a new link makes no sense.
+    elif data.startswith("resend:"):
+        old_pid = data.split(":", 1)[1]
+        payment = pending_pays.get(old_pid) or await get_pending(old_pid)
+        if not payment:
+            await query.answer("⚠️ This payment link has expired. Please /start again.", show_alert=True)
             return
+        state = user_state.get(user.id, {})
+        if not state.get("awaiting_screenshot") or state.get("pending_id") != old_pid:
+            await query.answer("⚠️ This payment is already under review.", show_alert=True)
+            return
+
+        bot_key  = payment["bot_key"]
+        plan_key = payment["plan_key"]
+        bot      = BOTS[bot_key]
+        plan     = bot["plans"][plan_key]
+        amount   = payment["amount"]
+        label    = plan["label"]
+        new_pid  = make_pending_id(user.id, bot_key, plan_key)
+
+        # Retire the old pid (and its expiry timer), start the new one.
+        cancel_expiry_by_pid(old_pid)
+        pending_pays.pop(old_pid, None)
+        await del_pending(old_pid)
+
+        new_data = dict(payment)
+        new_data["ts"] = datetime.now().isoformat()
+        pending_pays[new_pid] = new_data
+        await add_pending(new_pid, new_data)
+        user_state[user.id]["pending_id"] = new_pid
+
+        new_link = payment_link(new_pid)
+        caption = payment_caption(amount, label, new_link)
         try:
-            await query.message.edit_text(bot["description"], reply_markup=plan_kb(bot_key))
-        except Exception:
-            await query.message.reply_text(bot["description"], reply_markup=plan_kb(bot_key))
-        await query.answer()
+            if query.message.photo:
+                await query.message.edit_caption(
+                    caption=caption, reply_markup=pay_kb(new_link, new_pid))
+            else:
+                await query.message.edit_text(
+                    text=caption, reply_markup=pay_kb(new_link, new_pid))
+        except Exception as e:
+            logger.warning(f"Resend edit {old_pid}: {e}")
+        await query.answer("✅ Fresh link sent! Valid for 5 minutes.")
+
+        task = asyncio.create_task(
+            qr_expiry_timer(client, user.id, new_pid, bot_key, plan_key, query.message.chat.id)
+        )
+        expiry_tasks[new_pid] = task
+        await log(client,
+            f"<b>🔄 PAYMENT LINK RESENT</b>\n\n"
+            f"<b>👤 User:</b> <a href=\"tg://user?id={user.id}\">{esc(user.first_name)}</a>\n"
+            f"<b>🆔 User ID:</b> <code>{user.id}</code>\n"
+            f"<b>🤖 Bot:</b> {esc(bot['name'])} (<code>{esc(bot['username'])}</code>)\n"
+            f"<b>📅 Plan:</b> {esc(label)} | ₹{amount}\n"
+            f"<code>{datetime.now().strftime('%d %b %Y %H:%M:%S')}</code>"
+        )
 
     # ── PREMIUM PROOF ─────────────────────────────────────────
     elif data == "proof":
@@ -309,6 +363,7 @@ async def callbacks(client: Client, query: CallbackQuery):
             "plan_key":   plan_key,
             "expiry":     expiry_str,
             "expiry_raw": expiry_dt.strftime("%Y-%m-%d"),
+            "reminders_sent": [],
         }
         await add_sub(uid, sub)
 
@@ -319,6 +374,7 @@ async def callbacks(client: Client, query: CallbackQuery):
             "amount":   plan["price"],
             "date":     datetime.now().strftime("%d %b %Y"),
             "status":   "✅ Approved",
+            "receipt_id": pid,
         })
 
         try:
@@ -334,6 +390,23 @@ async def callbacks(client: Client, query: CallbackQuery):
             )
         except Exception as e:
             logger.error(f"Notify user {uid}: {e}")
+
+        # Payment receipt — a keepable record of the purchase.
+        try:
+            await client.send_message(
+                uid,
+                f"<b>🧾 PAYMENT RECEIPT</b>\n\n"
+                f"<blockquote><b>🧾 Receipt ID: <code>{esc(pid)}</code>\n"
+                f"🤖 Bot: {esc(bot['username'])}\n"
+                f"📅 Plan: {esc(plan['label'])}\n"
+                f"💰 Amount Paid: ₹{plan['price']}\n"
+                f"📆 Paid On: {datetime.now().strftime('%d %b %Y')}\n"
+                f"📆 Valid Until: {esc(expiry_str)}\n"
+                f"✅ Status: Approved</b></blockquote>\n\n"
+                f"<b>Keep this receipt for your records.</b>",
+            )
+        except Exception as e:
+            logger.error(f"Receipt to user {uid}: {e}")
 
         await query.answer("✅ Approved!")
         try:

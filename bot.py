@@ -68,7 +68,7 @@ margin:0;display:flex;justify-content:center;padding:40px 16px;text-align:center
 p{color:#94a3b8;line-height:1.6}</style></head>
 <body><div><h1>⏳ Payment link expired</h1>
 <p>This payment link is no longer valid (QR codes are valid for 5 minutes).<br>
-Open the bot and select your plan again to get a fresh link.</p></div></body></html>"""
+Open the bot and tap <b>🔄 GET NEW LINK</b> to get a fresh link.</p></div></body></html>"""
 
 
 async def pay_page(request):

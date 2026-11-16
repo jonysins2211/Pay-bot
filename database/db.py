@@ -90,6 +90,13 @@ async def get_history(user_id: int) -> list:
     doc = await history_col.find_one({"_id": user_id})
     return doc.get("history", []) if doc else []
 
+async def get_all_history() -> dict:
+    result = {}
+    async for doc in history_col.find():
+        uid = doc.pop("_id")
+        result[uid] = doc.get("history", [])
+    return result
+
 async def add_history(user_id: int, tx: dict):
     await history_col.update_one(
         {"_id": user_id},

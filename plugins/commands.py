@@ -1,13 +1,14 @@
 import logging
+from datetime import datetime
 from pyrogram import Client, filters
 from pyrogram.enums import ParseMode
 from pyrogram.types import Message
 
 from info import BOTS, ADMIN_IDS, ADMIN_GROUP, OWNER_USERNAME
-from keyboards import home_kb, renew_kb
+from keyboards import home_kb, myplan_kb
 from utils import user_state, pending_pays, reply_if_banned, ban_message, esc
 from database.db import (
-    get_subs, get_history, get_all_subs, get_all_pending,
+    get_subs, get_history, get_all_subs, get_all_pending, get_all_history,
     ban_user, unban_user, get_all_bans
 )
 
@@ -37,7 +38,8 @@ async def myplan_cmd(client: Client, message: Message):
             f"   📅 Plan: {esc(plan.get('label', '?'))}\n"
             f"   📆 Expires: {esc(sub.get('expiry', 'N/A'))}</b></blockquote>\n"
         )
-    await message.reply_text("\n".join(lines), reply_markup=home_kb())
+    # One Renew button per subscription — renews the same plan in one tap.
+    await message.reply_text("\n".join(lines), reply_markup=myplan_kb(subs))
 
 
 @Client.on_message(filters.command("myhistory") & filters.private)
@@ -60,6 +62,110 @@ async def myhistory_cmd(client: Client, message: Message):
             f"<blockquote><b>📅 {esc(tx.get('plan', '?'))} | 🕐 {esc(tx.get('date', '?'))} | {esc(tx.get('status', '?'))}</b></blockquote>\n"
         )
     await message.reply_text("\n".join(lines), reply_markup=home_kb())
+
+
+@Client.on_message(filters.command("mypayments") & filters.private)
+async def mypayments_cmd(client: Client, message: Message):
+    if await reply_if_banned(message):
+        return
+
+    uid = message.from_user.id
+    lines = ["<b>💳 YOUR PAYMENTS</b>\n"]
+
+    # Currently pending payments (started, not yet approved/rejected).
+    all_pending = await get_all_pending()
+    mine = [(pid, p) for pid, p in all_pending.items() if p.get("user_id") == uid]
+    for pid, p in mine:
+        bot  = BOTS.get(p["bot_key"], {})
+        plan = bot.get("plans", {}).get(p["plan_key"], {})
+        state = user_state.get(uid, {})
+        if state.get("awaiting_screenshot") and state.get("pending_id") == pid:
+            status = "⏳ Awaiting screenshot"
+        else:
+            status = "⏳ Under review"
+        lines.append(
+            f"<b>• {esc(bot.get('name', '?'))} — ₹{esc(p['amount'])}</b>\n"
+            f"<blockquote><b>📅 {esc(plan.get('label', '?'))} | {esc(status)}</b></blockquote>\n"
+        )
+
+    # Past payments (approved / rejected), latest 10.
+    history = await get_history(uid)
+    for i, tx in enumerate(history[-10:], 1):
+        lines.append(
+            f"<b>{i}. {esc(tx.get('bot_name', '?'))} — ₹{esc(tx.get('amount', '?'))}</b>\n"
+            f"<blockquote><b>📅 {esc(tx.get('plan', '?'))} | 🕐 {esc(tx.get('date', '?'))} | {esc(tx.get('status', '?'))}</b></blockquote>\n"
+        )
+
+    if not mine and not history:
+        await message.reply_text(
+            "<b>💳 YOUR PAYMENTS</b>\n\n"
+            "<blockquote><b>❌ No payments found.</b></blockquote>\n\n"
+            "<b>Use /start to buy a premium plan!</b>",
+            reply_markup=home_kb(),
+        )
+        return
+    await message.reply_text("\n".join(lines), reply_markup=home_kb())
+
+
+@Client.on_message(filters.command("stats") & filters.private)
+async def stats_cmd(client: Client, message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+
+    today = datetime.now().date()
+    all_subs = await get_all_subs()
+    active_subs = 0
+    active_users = 0
+    for subs in all_subs.values():
+        has_active = False
+        for sub in subs:
+            raw = sub.get("expiry_raw")
+            if not raw:
+                active_subs += 1
+                has_active = True
+                continue
+            try:
+                if datetime.strptime(raw, "%Y-%m-%d").date() >= today:
+                    active_subs += 1
+                    has_active = True
+            except Exception:
+                continue
+        if has_active:
+            active_users += 1
+
+    pending_count = len(await get_all_pending())
+
+    # Revenue from approved payments (history dates are "%d %b %Y").
+    month_revenue = 0
+    total_revenue = 0
+    approved_count = 0
+    all_history = await get_all_history()
+    for txs in all_history.values():
+        for tx in txs:
+            if tx.get("status") != "✅ Approved":
+                continue
+            try:
+                amount = int(tx.get("amount", 0))
+            except Exception:
+                continue
+            approved_count += 1
+            total_revenue += amount
+            try:
+                d = datetime.strptime(tx.get("date", ""), "%d %b %Y").date()
+                if d.year == today.year and d.month == today.month:
+                    month_revenue += amount
+            except Exception:
+                continue
+
+    await message.reply_text(
+        f"<b>📊 BOT STATS</b>\n\n"
+        f"<blockquote><b>👥 Premium users: <code>{active_users}</code>\n"
+        f"✅ Active subscriptions: <code>{active_subs}</code>\n"
+        f"⏳ Pending verifications: <code>{pending_count}</code>\n"
+        f"🧾 Approved payments: <code>{approved_count}</code></b></blockquote>\n\n"
+        f"<blockquote><b>💰 Revenue this month: ₹{month_revenue}\n"
+        f"💰 Total revenue: ₹{total_revenue}</b></blockquote>",
+    )
 
 
 @Client.on_message(filters.command("report") & filters.private)
@@ -89,6 +195,7 @@ async def owner_cmd(client: Client, message: Message):
         f"<blockquote><b>📋 Pending: <code>{pending_count}</code>\n"
         f"✅ Active Subs: <code>{active_count}</code></b></blockquote>\n\n"
         f"<b><code>/pending</code> — view pending payments</b>\n"
+        f"<b><code>/stats</code> — users, active subs, pending &amp; revenue</b>\n"
         f"<b><code>/broadcast &lt;msg&gt;</code> — broadcast to all users</b>\n"
         f"<b><code>/ban &lt;user_id&gt; &lt;reason&gt;</code> — block a user</b>\n"
         f"<b><code>/unban &lt;user_id&gt;</code> — unblock a user</b>\n"
